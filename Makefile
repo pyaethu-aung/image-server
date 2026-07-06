@@ -5,8 +5,9 @@
 OAPI_CODEGEN := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.4.1
 SQLC         := go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0
 MIGRATE      := go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+GOLANGCI     := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
 
-.PHONY: setup up down run migrate sqlc-gen openapi-gen test coverage test-api
+.PHONY: setup up down run migrate sqlc-gen openapi-gen lint test coverage test-api
 
 ## setup: wire git hooks (run once after clone)
 setup:
@@ -45,6 +46,10 @@ sqlc-gen:
 openapi-gen:
 	@mkdir -p internal/api/gen
 	$(OAPI_CODEGEN) -config oapi-codegen.yaml docs/openapi/image-server.yaml
+
+## lint: run golangci-lint (config in .golangci.yml)
+lint:
+	$(GOLANGCI) run
 
 ## test: run all unit tests with coverage profile
 test:

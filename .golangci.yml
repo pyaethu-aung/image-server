@@ -1,0 +1,27 @@
+version: "2"
+
+linters:
+  # standard = errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - gosec       # security checks (injection, weak crypto, file perms)
+    - misspell
+    - unconvert
+    - unparam
+    - copyloopvar
+    - noctx       # HTTP requests without context
+    - bodyclose   # unclosed response bodies
+  exclusions:
+    generated: lax
+    paths:
+      - internal/api/gen
+      - internal/db
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    paths:
+      - internal/api/gen
+      - internal/db

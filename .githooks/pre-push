@@ -4,7 +4,21 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# 1. Coverage gate (90% minimum, per layer and overall)
+# 1. Lint gate (golangci-lint, config in .golangci.yml)
+# ---------------------------------------------------------------------------
+
+echo "🔍 pre-push: running golangci-lint..."
+
+if ! make -s lint; then
+  echo ""
+  echo "❌ Lint gate failed: fix the issues above before pushing."
+  exit 1
+fi
+
+echo "✅ Lint gate passed"
+
+# ---------------------------------------------------------------------------
+# 2. Coverage gate (90% minimum, per layer and overall)
 # ---------------------------------------------------------------------------
 
 echo "🔍 pre-push: checking test coverage..."
@@ -77,7 +91,7 @@ fi
 echo "✅ Coverage gate passed"
 
 # ---------------------------------------------------------------------------
-# 2. API spec gate — every endpoint must satisfy docs/openapi/image-server.yaml
+# 3. API spec gate — every endpoint must satisfy docs/openapi/image-server.yaml
 # ---------------------------------------------------------------------------
 
 echo ""
