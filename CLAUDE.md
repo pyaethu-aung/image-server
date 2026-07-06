@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project Status
 
-**Planning stage.** The quality scaffolding exists (git hooks in `.githooks/`, OpenAPI spec, `oapi-codegen.yaml`, Makefile), but the server itself is not implemented. This document is the implementation contract: follow it when scaffolding and building. Update it as reality diverges from the plan.
+**Implementation step 1 complete.** The compose stack (Postgres 18, Redis 8, server image with libvips), migrations, sqlc setup, config package, and a healthz-only router are in place, and the pre-push gates run for real. Steps 2 to 5 of the implementation order (storage, uploads, transforms, caching) are not built yet. This document is the implementation contract; update it as reality diverges from the plan.
 
 ## What This Is
 
@@ -27,14 +27,16 @@ All workflows go through the Makefile:
 
 ```
 make setup        # one-time: wire git hooks (core.hooksPath -> .githooks/)
+make up           # build + boot the full stack detached (server + Postgres + Redis)
+make down         # stop the stack (keeps volumes)
 make run          # start the server locally
-make migrate      # apply SQL migrations (needs DATABASE_URL)
+make migrate      # apply SQL migrations (DATABASE_URL from env or .env)
 make sqlc-gen     # regenerate sqlc code from queries
 make openapi-gen  # regenerate chi interfaces + models from the OpenAPI spec
+make lint         # run golangci-lint (config in .golangci.yml)
 make test         # run all unit tests
 make coverage     # print overall coverage (excludes cmd/ and generated code)
 make test-api     # validate every endpoint against the OpenAPI spec
-docker-compose up # boot the full stack (server + Postgres + Redis)
 ```
 
 After editing anything under `internal/db/queries/` or `migrations/`, run `make sqlc-gen`; after editing `docs/openapi/image-server.yaml`, run `make openapi-gen`. Never hand-edit generated files (`internal/api/gen/`, sqlc output). The pre-commit hook fails if generated code is out of sync.
@@ -74,8 +76,9 @@ Git hooks live in `.githooks/` (committed) and are activated once per clone with
 
 - **pre-commit**: `go mod tidy` must be a no-op; generated code (`internal/api/gen/`, sqlc output) must be in sync with the spec/queries
 - **commit-msg**: subject line max 72 chars (hard fail), 50 preferred
-- **pre-push, gate 1 (coverage)**: per-layer `go test -cover` on `internal/api`, `internal/imageproc`, `internal/storage` plus overall coverage, all at a **90% threshold**. Excluded from coverage: `cmd/`, `internal/api/gen/`, `internal/db` (generated). Layers with no source files yet are skipped, so the gate works during incremental build-out
-- **pre-push, gate 2 (API spec)**: `make test-api` boots Postgres + Redis via docker compose and runs build-tagged (`apitest`) tests that validate every endpoint's requests and responses against the OpenAPI spec
+- **pre-push, gate 1 (lint)**: `make lint` runs golangci-lint (standard set plus gosec, noctx, bodyclose, and friends; config in `.golangci.yml`, generated code excluded). Fix findings, don't silence them without a reason
+- **pre-push, gate 2 (coverage)**: per-layer `go test -cover` on `internal/api`, `internal/imageproc`, `internal/storage` plus overall coverage, all at a **90% threshold**. Excluded from coverage: `cmd/`, `internal/api/gen/`, `internal/db` (generated). Layers with no source files yet are skipped, so the gate works during incremental build-out
+- **pre-push, gate 3 (API spec)**: `make test-api` boots Postgres + Redis via docker compose and runs build-tagged (`apitest`) tests that validate every endpoint's requests and responses against the OpenAPI spec
 
 This mirrors the hook setup in `yomafleet/better-marketing-service` (minus its Snyk/SonarQube stages).
 
@@ -148,6 +151,7 @@ Never generate or accept code that disables TLS verification or bypasses the API
 - SSRF tests must not make real network calls; inject a resolver or test against the validation function directly.
 - The local `Storage` backend makes integration-style tests cheap: use `t.TempDir()`, no mocks needed.
 - **API spec tests** (`make test-api`): build-tagged `apitest` tests in `internal/api/` boot the chi router in-process with `httptest`, real Postgres/Redis from compose, and storage in `t.TempDir()`. Every request and response is validated against `docs/openapi/image-server.yaml` using `kin-openapi/openapi3filter`. One always-on unit test loads the spec via the kin-openapi loader so a malformed spec fails plain `make test` too.
+- Note for step 3 (harness does not exist yet): Go build tags are additive, so `go test -tags=apitest ./internal/api/...` also re-runs the untagged unit tests in that package. Accepted as-is for now (they are fast). If that ever becomes annoying, move the harness into its own package (e.g. `internal/api/apitest/`) and point `make test-api` there so the target runs spec tests only.
 
 ## Implementation Order
 
