@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      # bimg (libvips) arrives in implementation step 4; installing the dev
+      # headers now keeps typechecking green when it lands.
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+
+  test:
+    name: Unit tests + coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev
+      - name: Coverage gate (same script as the pre-push hook)
+        run: ./scripts/coverage-gate.sh
+
+  drift:
+    name: Generated-code drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Regenerate from spec and queries
+        run: make openapi-gen sqlc-gen
+      - name: Fail if generated code was not committed
+        run: git diff --exit-code
+
+  api-test:
+    name: API spec tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: imageserver
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d imageserver"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      API_KEY: ci-test-key
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/imageserver?sslmode=disable
+      REDIS_ADDR: localhost:6379
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev
+      - name: Apply migrations
+        run: make migrate
+      - name: Run spec tests against service containers
+        env:
+          STORAGE_PATH: ${{ runner.temp }}/images
+        run: go test -v -tags=apitest ./internal/api/...

@@ -1,0 +1,28 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly Monday 02:00 UTC: catch newly disclosed vulns between pushes
+    - cron: "0 2 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck (SCA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install libvips
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev
+      # latest is deliberate for a vuln scanner: fresh checks, DB comes
+      # from the vuln server either way
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
