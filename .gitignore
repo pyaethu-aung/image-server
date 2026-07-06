@@ -1,0 +1,13 @@
+# Build and test artifacts
+coverage.out
+/bin/
+
+# Local image storage and env
+/data/
+.env
+
+# Editor / OS cruft
+.DS_Store
+.idea/
+.vscode/
+*.swp
