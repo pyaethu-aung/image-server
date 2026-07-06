@@ -1,0 +1,167 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code when working with code in this repository.
+
+## Project Status
+
+**Planning stage.** The quality scaffolding exists (git hooks in `.githooks/`, OpenAPI spec, `oapi-codegen.yaml`, Makefile), but the server itself is not implemented. This document is the implementation contract: follow it when scaffolding and building. Update it as reality diverges from the plan.
+
+## What This Is
+
+An image upload and transformation server in Go. Users upload images (multipart or by URL), originals are stored on the local filesystem behind a storage interface, and images are served back with on-the-fly transforms (resize, format conversion, quality, fit mode) driven by query params. Generated derivatives are cached so the same transform is never recomputed. S3-compatible storage is a planned second backend, not part of the initial build.
+
+## Tech Stack (fixed, do not substitute)
+
+- Go 1.26+ with the `chi` router
+- `h2non/bimg` (libvips) for image processing. libvips must be installed on the host for local builds; the Docker image handles it in containers.
+- Local filesystem for object storage (first `Storage` implementation; S3 comes later)
+- PostgreSQL via `pgx` + `sqlc` for image metadata
+- Redis for derivative cache keys and per-key rate limiting
+- `oapi-codegen` for chi server interfaces + models generated from the OpenAPI spec; `kin-openapi` for request/response validation in API tests
+- `docker-compose` for the local stack (Postgres, Redis)
+- Config via env vars (`caarlos0/env` or plain `os.Getenv`)
+
+## Commands
+
+All workflows go through the Makefile:
+
+```
+make setup        # one-time: wire git hooks (core.hooksPath -> .githooks/)
+make run          # start the server locally
+make migrate      # apply SQL migrations (needs DATABASE_URL)
+make sqlc-gen     # regenerate sqlc code from queries
+make openapi-gen  # regenerate chi interfaces + models from the OpenAPI spec
+make test         # run all unit tests
+make coverage     # print overall coverage (excludes cmd/ and generated code)
+make test-api     # validate every endpoint against the OpenAPI spec
+docker-compose up # boot the full stack (server + Postgres + Redis)
+```
+
+After editing anything under `internal/db/queries/` or `migrations/`, run `make sqlc-gen`; after editing `docs/openapi/image-server.yaml`, run `make openapi-gen`. Never hand-edit generated files (`internal/api/gen/`, sqlc output). The pre-commit hook fails if generated code is out of sync.
+
+## Project Structure
+
+```
+cmd/server/          entrypoint (main.go: wire config, storage, db, redis, router)
+internal/api/        handlers, middleware (auth, rate limit), router
+internal/api/gen/    oapi-codegen output (generated, never hand-edit)
+internal/storage/    Storage interface + local filesystem implementation
+internal/imageproc/  bimg transforms, param parsing, image validation
+internal/db/         sqlc-generated code + queries
+internal/config/     env parsing
+migrations/          SQL migrations
+docs/openapi/        image-server.yaml (OpenAPI 3.0.3, source of truth for the API)
+.githooks/           pre-commit, commit-msg, pre-push (activated via make setup)
+oapi-codegen.yaml    codegen config for the spec
+docker-compose.yml
+Makefile
+```
+
+## Spec-First API Workflow
+
+`docs/openapi/image-server.yaml` is the source of truth for the API. Any endpoint change starts there:
+
+1. Edit the spec
+2. Run `make openapi-gen` (regenerates `internal/api/gen/server.gen.go`)
+3. Implement or update the handler methods on the generated `ServerInterface`
+4. Update the API spec tests if response shapes changed
+
+Never change handler behavior without updating the spec in the same commit; the pre-commit hook blocks spec/codegen drift and the pre-push API spec gate blocks behavioral drift.
+
+## Quality Gates Before Push
+
+Git hooks live in `.githooks/` (committed) and are activated once per clone with `make setup`. Never bypass them with `--no-verify`.
+
+- **pre-commit**: `go mod tidy` must be a no-op; generated code (`internal/api/gen/`, sqlc output) must be in sync with the spec/queries
+- **commit-msg**: subject line max 72 chars (hard fail), 50 preferred
+- **pre-push, gate 1 (coverage)**: per-layer `go test -cover` on `internal/api`, `internal/imageproc`, `internal/storage` plus overall coverage, all at a **90% threshold**. Excluded from coverage: `cmd/`, `internal/api/gen/`, `internal/db` (generated). Layers with no source files yet are skipped, so the gate works during incremental build-out
+- **pre-push, gate 2 (API spec)**: `make test-api` boots Postgres + Redis via docker compose and runs build-tagged (`apitest`) tests that validate every endpoint's requests and responses against the OpenAPI spec
+
+This mirrors the hook setup in `yomafleet/better-marketing-service` (minus its Snyk/SonarQube stages).
+
+## Architecture Decisions
+
+### Storage is an interface, local filesystem is the first implementation
+
+Define in `internal/storage/`:
+
+```go
+type Storage interface {
+    Put(ctx context.Context, key string, r io.Reader, contentType string) error
+    Get(ctx context.Context, key string) (io.ReadCloser, error)
+    Delete(ctx context.Context, key string) error
+    Exists(ctx context.Context, key string) (bool, error)
+}
+```
+
+Handlers and services depend only on this interface. The local backend stores objects under a configured root directory (`STORAGE_PATH`), with keys mapped to file paths. Adding a future backend (S3, OneDrive, Dropbox) must be a new file in `internal/storage/`, not a rewrite. Do not leak filesystem details (paths, `os.File`) outside that package; keys are opaque strings to callers.
+
+Local backend requirements:
+- Sanitize keys before mapping to paths: reject `..`, absolute paths, and anything escaping `STORAGE_PATH` (path-traversal guard)
+- Write via temp file + rename so a crashed write never leaves a partial object readable
+- In Docker, `STORAGE_PATH` is a mounted volume so images survive container restarts
+
+### Data model
+
+`images` table: `id` (uuid), `original_filename`, `content_hash` (sha256), `mime_type`, `width`, `height`, `size_bytes`, `storage_key`, `created_at`.
+
+Dedup on `content_hash` with a unique constraint: an identical upload returns the existing record instead of storing a duplicate. `storage_key` is backend-agnostic (a key into the `Storage` interface, not a file path).
+
+### Derivative caching
+
+- Cache key = hash of `image_id` + normalized transform params. Normalize before hashing (sorted params, defaults filled in) so `?w=100&h=200` and `?h=200&w=100` hit the same key.
+- Derivatives live under a separate storage prefix (e.g. `derivatives/`) from originals. Check Redis for the cache key, and `Storage.Exists`, before regenerating.
+- Serve responses with appropriate `Cache-Control` headers.
+
+### Endpoints
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/v1/images` | multipart upload, returns id + metadata |
+| POST | `/v1/images/from-url` | JSON `{"url": "..."}`, server fetches |
+| GET | `/v1/images/{id}` | original, or transformed via `w`, `h`, `fmt` (jpeg/png/webp), `q`, `fit` (cover/contain) |
+| GET | `/v1/images/{id}/meta` | metadata JSON |
+| DELETE | `/v1/images/{id}` | delete original, derivatives, metadata |
+| GET | `/healthz` | no auth |
+
+All `/v1` routes require an `X-API-Key` header matching the configured env key, enforced in middleware, plus per-key rate limiting backed by Redis.
+
+## Security Requirements (non-negotiable, do not skip or weaken)
+
+1. **Magic-byte validation**: detect the real image type from content, never trust the file extension or Content-Type header.
+2. **Max upload size**: env-configurable, default 10MB. Enforce with `http.MaxBytesReader`, not just a header check.
+3. **Decompression-bomb guard**: reject images whose decoded pixel count (width x height) exceeds a configured cap before running transforms.
+4. **SSRF protection on `from-url`**: this is the most security-sensitive code in the repo. The guard must:
+   - Allow only `http` and `https` schemes
+   - Resolve the hostname and reject private (RFC 1918), loopback, link-local ranges, and `169.254.169.254` (cloud metadata) for both IPv4 and IPv6
+   - Re-resolve and re-check on every redirect (use a custom `CheckRedirect`), since a public host can redirect to an internal one
+   - Pin the dial to the validated IP (custom `DialContext`) to prevent DNS-rebinding between the check and the fetch
+5. **Path-traversal guard in local storage**: storage keys must never escape `STORAGE_PATH` (see storage section above).
+6. Parameterized queries only (sqlc gives this for free). No secrets in code or committed files; everything sensitive comes from env vars.
+
+Never generate or accept code that disables TLS verification or bypasses the API-key auth, including "just for testing".
+
+## Testing
+
+- Table-driven unit tests are the house style. Unit-test coverage must stay at or above 90% per layer and overall (enforced by the pre-push hook).
+- Required coverage: `internal/imageproc` transform param parsing (valid/invalid/edge values for `w`, `h`, `fmt`, `q`, `fit`), the SSRF guard (private ranges, loopback, metadata IP, redirects to internal hosts, IPv6 forms, non-http schemes), and local storage key sanitization (traversal attempts).
+- SSRF tests must not make real network calls; inject a resolver or test against the validation function directly.
+- The local `Storage` backend makes integration-style tests cheap: use `t.TempDir()`, no mocks needed.
+- **API spec tests** (`make test-api`): build-tagged `apitest` tests in `internal/api/` boot the chi router in-process with `httptest`, real Postgres/Redis from compose, and storage in `t.TempDir()`. Every request and response is validated against `docs/openapi/image-server.yaml` using `kin-openapi/openapi3filter`. One always-on unit test loads the spec via the kin-openapi loader so a malformed spec fails plain `make test` too.
+
+## Implementation Order
+
+Build and checkpoint in this order, one layer at a time:
+
+1. Scaffold project structure + `docker-compose.yml` + migrations + sqlc setup + first `make openapi-gen` run (Makefile, hooks, and the OpenAPI spec already exist)
+2. `Storage` interface + local filesystem implementation
+3. Upload paths (`POST /v1/images`, then `/from-url` with the SSRF guard), implementing the generated `ServerInterface`; the API spec test harness lands here
+4. Transform-on-read (`GET /v1/images/{id}` with query params)
+5. Derivative caching (Redis keys + derivative prefix + Cache-Control)
+
+Auth and rate-limit middleware land with step 3 (first authenticated endpoints). Do not batch multiple layers into one pass; finish and verify each before starting the next. Every step must leave the pre-push gates green (90% coverage on implemented layers, spec tests passing).
+
+## Roadmap After Core
+
+1. **MCP server interface**: expose the service as an MCP server so Claude and other MCP clients can upload and transform images through tools. Keep handler logic in service-layer functions that both the HTTP handlers and MCP tool handlers can call, so the MCP layer is a thin adapter. Local storage keeps this deployable as a single process with no cloud dependencies.
+2. **S3 storage backend**: add an S3 implementation of `Storage` (AWS SDK for Go v2) as a second backend selected via config. This must not require changes outside `internal/storage/` and config wiring. For local testing use a maintained S3-compatible server such as Garage (do not use MinIO: the repo was archived in April 2026 and receives no security patches).
