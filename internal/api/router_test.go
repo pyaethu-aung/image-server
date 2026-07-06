@@ -79,13 +79,14 @@ func TestRouterBindingError(t *testing.T) {
 }
 
 // TestRouterUnimplemented: endpoints from later steps must 501 through the
-// embedded gen.Unimplemented, behind auth.
+// embedded gen.Unimplemented, behind auth. DELETE (Step 5) is the remaining
+// unimplemented endpoint.
 func TestRouterUnimplemented(t *testing.T) {
 	srv := httptest.NewServer(newTestRouter(t))
 	defer srv.Close()
 
-	url := srv.URL + "/v1/images/7d444840-9dc0-11d1-b245-5ffdce74fad2/meta"
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	url := srv.URL + "/v1/images/7d444840-9dc0-11d1-b245-5ffdce74fad2"
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, url, nil)
 	if err != nil {
 		t.Fatalf("build request: %v", err)
 	}

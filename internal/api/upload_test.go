@@ -33,6 +33,7 @@ import (
 // value behaves like an empty database.
 type fakeImageStore struct {
 	getByHash   func(hash string) (db.Image, error)
+	getByID     func(id uuid.UUID) (db.Image, error)
 	create      func(arg db.CreateImageParams) (db.Image, error)
 	createCalls int
 	lastCreate  db.CreateImageParams
@@ -54,7 +55,10 @@ func (f *fakeImageStore) CreateImage(_ context.Context, arg db.CreateImageParams
 	return imageFromParams(arg), nil
 }
 
-func (f *fakeImageStore) GetImage(_ context.Context, _ uuid.UUID) (db.Image, error) {
+func (f *fakeImageStore) GetImage(_ context.Context, id uuid.UUID) (db.Image, error) {
+	if f.getByID != nil {
+		return f.getByID(id)
+	}
 	return db.Image{}, pgx.ErrNoRows
 }
 
