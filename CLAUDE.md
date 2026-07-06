@@ -77,10 +77,12 @@ Git hooks live in `.githooks/` (committed) and are activated once per clone with
 - **pre-commit**: `go mod tidy` must be a no-op; generated code (`internal/api/gen/`, sqlc output) must be in sync with the spec/queries
 - **commit-msg**: subject line max 72 chars (hard fail), 50 preferred
 - **pre-push, gate 1 (lint)**: `make lint` runs golangci-lint (standard set plus gosec, noctx, bodyclose, and friends; config in `.golangci.yml`, generated code excluded). Fix findings, don't silence them without a reason
-- **pre-push, gate 2 (coverage)**: per-layer `go test -cover` on `internal/api`, `internal/imageproc`, `internal/storage` plus overall coverage, all at a **90% threshold**. Excluded from coverage: `cmd/`, `internal/api/gen/`, `internal/db` (generated). Layers with no source files yet are skipped, so the gate works during incremental build-out
+- **pre-push, gate 2 (coverage)**: per-layer `go test -cover` on `internal/api`, `internal/imageproc`, `internal/storage` plus overall coverage, all at a **90% threshold**. Excluded from coverage: `cmd/`, `internal/api/gen/`, `internal/db` (generated). Layers with no source files yet are skipped, so the gate works during incremental build-out. The logic lives in `scripts/coverage-gate.sh`, shared with CI; change thresholds there, never in just one place
 - **pre-push, gate 3 (API spec)**: `make test-api` boots Postgres + Redis via docker compose and runs build-tagged (`apitest`) tests that validate every endpoint's requests and responses against the OpenAPI spec
 
 This mirrors the hook setup in `yomafleet/better-marketing-service` (minus its Snyk/SonarQube stages).
+
+CI (`.github/workflows/`) re-enforces the same gates server-side, so `--no-verify` or an unconfigured clone cannot bypass them: `ci.yml` (lint, coverage gate via the shared script, generated-code drift check, API spec tests against Postgres/Redis service containers), `docker.yml` (image build on PRs, push to GHCR on main/tags), `security.yml` (govulncheck on PRs and weekly), `semantic.yml` (Conventional Commits PR titles). Dependabot watches gomod, docker, and github-actions weekly.
 
 ## Architecture Decisions
 

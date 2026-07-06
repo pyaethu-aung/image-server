@@ -71,6 +71,8 @@ The repo ships hooks in `.githooks/`, activated by `make setup` (`git config cor
 - **commit-msg**: 50/72 subject-line rule
 - **pre-push**: golangci-lint, unit-test coverage gate (90% per layer and overall, generated code excluded), and API spec tests (`make test-api`)
 
+CI re-runs the same gates on every PR (lint, coverage, generated-code drift, spec tests against real Postgres/Redis), builds the Docker image, runs `govulncheck`, and validates PR titles as Conventional Commits. Dependabot keeps Go modules, Docker base images, and Actions current.
+
 ### Configuration
 
 All configuration is via environment variables. Never commit real credentials.
