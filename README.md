@@ -2,7 +2,7 @@
 
 An image upload and transformation service in Go. Upload images via multipart form or by URL, store originals on local disk behind a pluggable storage interface, and serve them back with on-the-fly transforms (resize, format conversion, quality, fit) via URL query params. Generated derivatives are cached so repeated transforms are served from cache, not recomputed.
 
-> **Status: under construction.** The stack boots (`docker-compose up` serves `/healthz`), migrations and sqlc are wired, and the quality gates are live, but the image endpoints are not implemented yet. See [CLAUDE.md](CLAUDE.md) for the implementation plan and architecture decisions. An MCP server interface is planned after the HTTP core is complete, followed by an S3 storage backend.
+> **Status: under construction.** Uploads (`POST /v1/images`, `POST /v1/images/from-url`) and reads (`GET /v1/images/{id}`, original or transformed, plus `/meta`) are live and tested; derivative caching and `DELETE` are still in progress. See [CLAUDE.md](CLAUDE.md) for the implementation plan and architecture decisions. An MCP server interface is planned after the HTTP core is complete, followed by an S3 storage backend.
 
 ## Features
 
@@ -87,6 +87,7 @@ All configuration is via environment variables. Never commit real credentials.
 | `MAX_UPLOAD_BYTES` | Max upload size | `10485760` (10MB) |
 | `MAX_PIXELS` | Max decoded pixel count (bomb guard) | `50000000` |
 | `RATE_LIMIT_PER_MIN` | Requests per minute per API key | `120` |
+| `CACHE_CONTROL_MAX_AGE` | `Cache-Control` max-age (seconds) on served image bytes | `31536000` (1 year) |
 
 ## API
 
