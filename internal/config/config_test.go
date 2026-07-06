@@ -11,6 +11,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		"API_KEY", "LISTEN_ADDR", "DATABASE_URL", "REDIS_ADDR",
 		"STORAGE_PATH", "MAX_UPLOAD_BYTES", "MAX_PIXELS", "RATE_LIMIT_PER_MIN",
+		"CACHE_CONTROL_MAX_AGE",
 	} {
 		t.Setenv(k, "")
 	}
@@ -31,14 +32,15 @@ func TestLoadDefaults(t *testing.T) {
 	}
 
 	want := Config{
-		APIKey:          "test-key",
-		ListenAddr:      ":8080",
-		DatabaseURL:     "postgres://localhost/test",
-		RedisAddr:       "localhost:6379",
-		StoragePath:     "./data/images",
-		MaxUploadBytes:  10 * 1024 * 1024,
-		MaxPixels:       50_000_000,
-		RateLimitPerMin: 120,
+		APIKey:             "test-key",
+		ListenAddr:         ":8080",
+		DatabaseURL:        "postgres://localhost/test",
+		RedisAddr:          "localhost:6379",
+		StoragePath:        "./data/images",
+		MaxUploadBytes:     10 * 1024 * 1024,
+		MaxPixels:          50_000_000,
+		RateLimitPerMin:    120,
+		CacheControlMaxAge: 31_536_000,
 	}
 	if cfg != want {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
@@ -53,6 +55,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("MAX_UPLOAD_BYTES", "1048576")
 	t.Setenv("MAX_PIXELS", "1000000")
 	t.Setenv("RATE_LIMIT_PER_MIN", "10")
+	t.Setenv("CACHE_CONTROL_MAX_AGE", "3600")
 
 	cfg, err := Load()
 	if err != nil {
@@ -60,14 +63,15 @@ func TestLoadOverrides(t *testing.T) {
 	}
 
 	want := Config{
-		APIKey:          "test-key",
-		ListenAddr:      ":9090",
-		DatabaseURL:     "postgres://localhost/test",
-		RedisAddr:       "redis:6379",
-		StoragePath:     "/data/images",
-		MaxUploadBytes:  1048576,
-		MaxPixels:       1000000,
-		RateLimitPerMin: 10,
+		APIKey:             "test-key",
+		ListenAddr:         ":9090",
+		DatabaseURL:        "postgres://localhost/test",
+		RedisAddr:          "redis:6379",
+		StoragePath:        "/data/images",
+		MaxUploadBytes:     1048576,
+		MaxPixels:          1000000,
+		RateLimitPerMin:    10,
+		CacheControlMaxAge: 3600,
 	}
 	if cfg != want {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
@@ -131,6 +135,20 @@ func TestLoadErrors(t *testing.T) {
 				"API_KEY": "k", "DATABASE_URL": "d", "RATE_LIMIT_PER_MIN": "0",
 			},
 			wantErr: "RATE_LIMIT_PER_MIN must be positive",
+		},
+		{
+			name: "non-integer CACHE_CONTROL_MAX_AGE",
+			env: map[string]string{
+				"API_KEY": "k", "DATABASE_URL": "d", "CACHE_CONTROL_MAX_AGE": "forever",
+			},
+			wantErr: "CACHE_CONTROL_MAX_AGE",
+		},
+		{
+			name: "negative CACHE_CONTROL_MAX_AGE",
+			env: map[string]string{
+				"API_KEY": "k", "DATABASE_URL": "d", "CACHE_CONTROL_MAX_AGE": "-1",
+			},
+			wantErr: "CACHE_CONTROL_MAX_AGE must not be negative",
 		},
 	}
 

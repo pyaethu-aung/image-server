@@ -18,6 +18,8 @@ type Config struct {
 	MaxUploadBytes  int64
 	MaxPixels       int64
 	RateLimitPerMin int
+	// CacheControlMaxAge is the max-age (seconds) sent on served image bytes.
+	CacheControlMaxAge int
 }
 
 // Load reads configuration from the environment. API_KEY and DATABASE_URL
@@ -50,6 +52,13 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.RateLimitPerMin = int(rate)
+	// Default one year; image bytes are content-addressed, so a derivative for
+	// a given id+params never changes and can be cached aggressively.
+	maxAge, err := getenvInt64("CACHE_CONTROL_MAX_AGE", 31_536_000)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.CacheControlMaxAge = int(maxAge)
 
 	if cfg.MaxUploadBytes <= 0 {
 		return Config{}, fmt.Errorf("MAX_UPLOAD_BYTES must be positive")
@@ -59,6 +68,9 @@ func Load() (Config, error) {
 	}
 	if cfg.RateLimitPerMin <= 0 {
 		return Config{}, fmt.Errorf("RATE_LIMIT_PER_MIN must be positive")
+	}
+	if cfg.CacheControlMaxAge < 0 {
+		return Config{}, fmt.Errorf("CACHE_CONTROL_MAX_AGE must not be negative")
 	}
 
 	return cfg, nil
