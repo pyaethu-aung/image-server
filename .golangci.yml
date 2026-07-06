@@ -13,6 +13,13 @@ linters:
     - bodyclose   # unclosed response bodies
   exclusions:
     generated: lax
+    rules:
+      # gosec's file-permission (G302) and file-inclusion (G304) heuristics
+      # target shipped code; test scaffolding legitimately writes temp files
+      # and chmods fixture dirs. Keep gosec fully active on production code.
+      - linters:
+          - gosec
+        path: _test\.go
     paths:
       - internal/api/gen
       - internal/db
