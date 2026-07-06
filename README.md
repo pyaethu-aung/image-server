@@ -2,7 +2,7 @@
 
 An image upload and transformation service in Go. Upload images via multipart form or by URL, store originals on local disk behind a pluggable storage interface, and serve them back with on-the-fly transforms (resize, format conversion, quality, fit) via URL query params. Generated derivatives are cached so repeated transforms are served from cache, not recomputed.
 
-> **Status: not yet implemented.** The quality scaffolding (git hooks, OpenAPI spec, Makefile) is in place, but the server is not built yet. This README describes the planned API and setup. See [CLAUDE.md](CLAUDE.md) for the implementation plan and architecture decisions. An MCP server interface is planned after the HTTP core is complete, followed by an S3 storage backend.
+> **Status: under construction.** The stack boots (`docker-compose up` serves `/healthz`), migrations and sqlc are wired, and the quality gates are live, but the image endpoints are not implemented yet. See [CLAUDE.md](CLAUDE.md) for the implementation plan and architecture decisions. An MCP server interface is planned after the HTTP core is complete, followed by an S3 storage backend.
 
 ## Features
 
@@ -38,10 +38,10 @@ git clone https://github.com/pyaethu-aung/image-server.git
 cd image-server
 make setup             # wire git hooks (one-time; see Quality gates below)
 cp .env.example .env   # set API_KEY and adjust as needed
-docker-compose up
+make up
 ```
 
-This boots the server plus Postgres and Redis. Uploaded images are stored in a Docker volume mounted at `STORAGE_PATH`. Then apply migrations:
+This builds the server image and boots it with Postgres and Redis, detached. Uploaded images are stored in a Docker volume mounted at `STORAGE_PATH`. Then apply migrations:
 
 ```sh
 make migrate
@@ -51,10 +51,13 @@ make migrate
 
 ```sh
 make setup        # one-time: activate the committed git hooks
+make up           # build and boot the full stack, detached
+make down         # stop the stack (keeps volumes)
 make run          # run the server locally (expects the compose services up)
-make migrate      # apply SQL migrations (needs DATABASE_URL)
+make migrate      # apply SQL migrations (DATABASE_URL from env or .env)
 make sqlc-gen     # regenerate database code from SQL queries
 make openapi-gen  # regenerate server interfaces from the OpenAPI spec
+make lint         # run golangci-lint
 make test         # run all unit tests
 make coverage     # print overall coverage
 make test-api     # validate every endpoint against the OpenAPI spec
@@ -66,7 +69,7 @@ The repo ships hooks in `.githooks/`, activated by `make setup` (`git config cor
 
 - **pre-commit**: `go mod tidy` cleanliness and generated-code sync checks
 - **commit-msg**: 50/72 subject-line rule
-- **pre-push**: unit-test coverage gate (90% per layer and overall, generated code excluded) plus API spec tests (`make test-api`)
+- **pre-push**: golangci-lint, unit-test coverage gate (90% per layer and overall, generated code excluded), and API spec tests (`make test-api`)
 
 ### Configuration
 
