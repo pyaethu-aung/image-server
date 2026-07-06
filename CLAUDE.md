@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project Status
 
-**Implementation step 1 complete.** The compose stack (Postgres 18, Redis 8, server image with libvips), migrations, sqlc setup, config package, and a healthz-only router are in place, and the pre-push gates run for real. Steps 2 to 5 of the implementation order (storage, uploads, transforms, caching) are not built yet. This document is the implementation contract; update it as reality diverges from the plan.
+**Implementation steps 1 to 2 complete.** The compose stack (Postgres 18, Redis 8, server image with libvips), migrations, sqlc setup, config package, and a healthz-only router are in place; the `Storage` interface and its local filesystem backend (`internal/storage/`) are built and tested; and the pre-push gates run for real. Steps 3 to 5 of the implementation order (uploads, transforms, caching) are not built yet. This document is the implementation contract; update it as reality diverges from the plan.
 
 ## What This Is
 
@@ -96,13 +96,16 @@ type Storage interface {
     Get(ctx context.Context, key string) (io.ReadCloser, error)
     Delete(ctx context.Context, key string) error
     Exists(ctx context.Context, key string) (bool, error)
+    List(ctx context.Context, prefix string) ([]string, error)
 }
 ```
 
 Handlers and services depend only on this interface. The local backend stores objects under a configured root directory (`STORAGE_PATH`), with keys mapped to file paths. Adding a future backend (S3, OneDrive, Dropbox) must be a new file in `internal/storage/`, not a rewrite. Do not leak filesystem details (paths, `os.File`) outside that package; keys are opaque strings to callers.
 
+`List` returns every key with a given byte prefix (S3-compatible prefix semantics, not a directory boundary), so derivative cleanup can enumerate `derivatives/<image_id>/` authoritatively from storage rather than depending on evictable Redis state. Backends return `ErrNotFound` from `Get` on a missing key and `ErrInvalidKey` for keys that are empty or would escape the namespace.
+
 Local backend requirements:
-- Sanitize keys before mapping to paths: reject `..`, absolute paths, and anything escaping `STORAGE_PATH` (path-traversal guard)
+- Sanitize keys before mapping to paths: reject `..`, absolute paths, and anything escaping `STORAGE_PATH` (path-traversal guard). The implementation combines `filepath.IsLocal` key validation with an `os.Root` handle so escapes are also rejected at the syscall level, including via pre-existing symlinks.
 - Write via temp file + rename so a crashed write never leaves a partial object readable
 - In Docker, `STORAGE_PATH` is a mounted volume so images survive container restarts
 
