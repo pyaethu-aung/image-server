@@ -1,0 +1,9 @@
+# oapi-codegen configuration: generates chi server interfaces + models
+# from docs/openapi/image-server.yaml into internal/api/gen/.
+# Regenerate with: make openapi-gen
+package: gen
+output: internal/api/gen/server.gen.go
+generate:
+  chi-server: true
+  models: true
+  embedded-spec: true
