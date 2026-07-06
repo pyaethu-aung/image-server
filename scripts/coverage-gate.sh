@@ -40,6 +40,7 @@ check_layer() {
 check_layer "API"       "./internal/api/..."
 check_layer "Imageproc" "./internal/imageproc/..."
 check_layer "Storage"   "./internal/storage/..."
+check_layer "Fetch"     "./internal/fetch/..."
 
 # Overall coverage.
 # Exclude: entrypoint (cmd/), oapi-codegen output (internal/api/gen),
