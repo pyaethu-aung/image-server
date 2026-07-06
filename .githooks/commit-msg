@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# commit-msg: enforce the 50/72 subject line rule
+
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+SUBJECT=$(head -1 "$COMMIT_MSG_FILE")
+LENGTH=${#SUBJECT}
+
+if [ "$LENGTH" -gt 72 ]; then
+  echo ""
+  echo "❌ commit-msg: subject line is $LENGTH chars (hard limit: 72)."
+  echo "   Shorten it and recommit."
+  echo ""
+  exit 1
+fi
+
+if [ "$LENGTH" -gt 50 ]; then
+  echo ""
+  echo "⚠️  commit-msg: subject line is $LENGTH chars (soft limit: 50)."
+  echo "   Consider shortening, but commit will proceed."
+  echo ""
+fi
