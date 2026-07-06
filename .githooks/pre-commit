@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# pre-commit: dependency hygiene + generated-code drift checks
+
+set -euo pipefail
+
+echo "🔍 pre-commit: running go mod tidy..."
+
+go mod tidy
+
+if ! git diff --exit-code -- go.mod go.sum > /dev/null 2>&1; then
+  echo ""
+  echo "❌ go mod tidy changed go.mod or go.sum."
+  echo "   Stage the changes and amend your commit:"
+  echo ""
+  echo "     git add go.mod go.sum"
+  echo "     git commit --amend --no-edit"
+  echo ""
+  exit 1
+fi
+
+echo "✅ go mod tidy: no changes"
+
+# ---------------------------------------------------------------------------
+# Generated-code drift: spec/queries must be committed with their output
+# ---------------------------------------------------------------------------
+
+if [[ -f oapi-codegen.yaml && -f docs/openapi/image-server.yaml ]]; then
+  echo "🔍 pre-commit: checking OpenAPI generated code is in sync..."
+  make -s openapi-gen > /dev/null
+  if ! git diff --exit-code -- internal/api/gen > /dev/null 2>&1; then
+    echo ""
+    echo "❌ internal/api/gen is out of sync with docs/openapi/image-server.yaml."
+    echo "   Run 'make openapi-gen', stage the result, and recommit."
+    echo ""
+    exit 1
+  fi
+  echo "✅ openapi-gen: in sync"
+fi
+
+if [[ -f sqlc.yaml ]]; then
+  echo "🔍 pre-commit: checking sqlc generated code is in sync..."
+  make -s sqlc-gen > /dev/null
+  if ! git diff --exit-code -- internal/db > /dev/null 2>&1; then
+    echo ""
+    echo "❌ internal/db is out of sync with the SQL queries."
+    echo "   Run 'make sqlc-gen', stage the result, and recommit."
+    echo ""
+    exit 1
+  fi
+  echo "✅ sqlc-gen: in sync"
+fi
