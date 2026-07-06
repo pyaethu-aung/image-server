@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: imageserver
+    ports:
+      # Host port is overridable; other local stacks commonly hold 5432/5433
+      - "${POSTGRES_HOST_PORT:-5434}:5432"
+    volumes:
+      # postgres:18+ images expect the mount at /var/lib/postgresql
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d imageserver"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build: .
+    env_file:
+      - .env
+    environment:
+      # In-network hostnames override the localhost values from .env
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/imageserver?sslmode=disable
+      REDIS_ADDR: redis:6379
+      STORAGE_PATH: /data/images
+      LISTEN_ADDR: ":8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - image-data:/data/images
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pg-data:
+  image-data:
