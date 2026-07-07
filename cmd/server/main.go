@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,15 @@ import (
 const fetchTimeout = 30 * time.Second
 
 func main() {
+	// `server healthcheck` is invoked by the Dockerfile's HEALTHCHECK
+	// instruction. It probes this same binary's own /healthz over loopback
+	// and exits 0/1, so the runtime image never needs curl (smaller image,
+	// no extra CVE surface to patch).
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		runHealthcheck()
+		return
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config", "err", err)
@@ -88,4 +98,34 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+// runHealthcheck implements `server healthcheck`. It reuses config.Load() so
+// it always probes the port the main process is actually listening on
+// (LISTEN_ADDR), rather than a hardcoded value that could silently drift.
+func runHealthcheck() {
+	cfg, err := config.Load()
+	if err != nil {
+		os.Exit(1)
+	}
+	addr := cfg.ListenAddr
+	if strings.HasPrefix(addr, ":") {
+		addr = "localhost" + addr
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", nil)
+	if err != nil {
+		os.Exit(1)
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		os.Exit(1)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
