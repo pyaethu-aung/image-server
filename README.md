@@ -61,6 +61,7 @@ make lint         # run golangci-lint
 make test         # run all unit tests
 make coverage     # print overall coverage
 make test-api     # validate every endpoint against the OpenAPI spec
+make test-e2e     # full-stack e2e tests against the real container (LOCAL-ONLY, not in CI)
 ```
 
 ### Quality gates (git hooks)
@@ -69,9 +70,9 @@ The repo ships hooks in `.githooks/`, activated by `make setup` (`git config cor
 
 - **pre-commit**: `go mod tidy` cleanliness and generated-code sync checks
 - **commit-msg**: 50/72 subject-line rule
-- **pre-push**: golangci-lint, unit-test coverage gate (90% per layer and overall, generated code excluded), and API spec tests (`make test-api`)
+- **pre-push**: golangci-lint, unit-test coverage gate (90% per layer and overall, generated code excluded), API spec tests (`make test-api`), and a full-stack e2e gate against the real Docker container (`make test-e2e`)
 
-CI re-runs the same gates on every PR (lint, coverage, generated-code drift, spec tests against real Postgres/Redis), builds the Docker image, runs `govulncheck`, and validates PR titles as Conventional Commits. Dependabot keeps Go modules, Docker base images, and Actions current.
+CI re-runs three of these four gates on every PR (lint, coverage, generated-code drift, spec tests against real Postgres/Redis). **The e2e gate (`make test-e2e`) is local-only: CI does not re-run it.** `docker.yml` builds and pushes the server image but runs no tests against it, so a push made with `--no-verify`, or from a clone that skipped `make setup`, has no server-side backstop for container-level regressions. CI also runs `govulncheck` and validates PR titles as Conventional Commits. Dependabot keeps Go modules, Docker base images, and Actions current.
 
 ### Claude Code plugins (contributors)
 
@@ -227,9 +228,10 @@ Storage is defined as an interface (`Put`, `Get`, `Delete`, `Exists`) with the l
 ```sh
 make test      # unit tests
 make test-api  # spec-driven API tests (starts Postgres + Redis via compose)
+make test-e2e  # full-stack e2e tests against the real container (local-only)
 ```
 
-Table-driven unit tests cover transform param parsing, the SSRF guard, and storage key sanitization; the pre-push hook enforces 90% coverage. API tests boot the router in-process and validate every request/response against the OpenAPI spec with `kin-openapi`.
+Table-driven unit tests cover transform param parsing, the SSRF guard, and storage key sanitization; the pre-push hook enforces 90% coverage. API tests boot the router in-process and validate every request/response against the OpenAPI spec with `kin-openapi`. `make test-e2e` goes one step further: it boots the real `server` Docker image (not an in-process router) and runs the same kind of spec-validated checks against it over the network — the only test path that exercises the Dockerfile, the libvips runtime lib, and container env-var wiring. It is a local-only pre-push gate; CI does not run it.
 
 ## Roadmap
 
