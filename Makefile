@@ -7,7 +7,7 @@ SQLC         := go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0
 MIGRATE      := go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
 GOLANGCI     := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
 
-.PHONY: setup up down run migrate sqlc-gen openapi-gen lint test coverage test-api
+.PHONY: setup up down run migrate sqlc-gen openapi-gen lint test coverage test-api test-e2e
 
 ## setup: wire git hooks (run once after clone)
 setup:
@@ -78,3 +78,18 @@ test-api:
 		{ if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
 		go test -v -tags=apitest ./internal/api/...; }; \
 	fi
+
+## test-e2e: full-stack e2e tests against the real server container (needs docker; LOCAL-ONLY, not run in CI)
+# Boots the whole stack including the real "server" image (--build --wait),
+# applies migrations (the app does not auto-migrate on boot), then runs
+# build-tagged (e2e) tests over the network. Additive tags mean this also
+# re-runs the untagged unit tests in internal/api. Does not tear the stack
+# down afterward, matching test-api's behavior of leaving services running
+# for the developer.
+test-e2e:
+	@test -f .env || { echo "❌ .env not found; run: cp .env.example .env"; exit 1; }
+	@docker info > /dev/null 2>&1 || { echo "❌ test-e2e: docker is not running"; exit 1; }
+	docker compose up -d --build --wait --wait-timeout 120
+	$(MAKE) migrate
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
+	go test -v -tags=e2e ./internal/api/...
