@@ -11,17 +11,19 @@ import (
 	"github.com/pyaethu-aung/image-server/internal/storage"
 )
 
-// Server implements the generated ServerInterface. Endpoints not built yet
-// fall through to the embedded gen.Unimplemented (501).
+// Server implements the generated ServerInterface. Every endpoint is
+// implemented, so the gen.Unimplemented embed is gone; the assertion below
+// keeps the compiler honest about that.
 type Server struct {
-	gen.Unimplemented
-
 	cfg     config.Config
 	store   storage.Storage
 	images  imageStore
 	fetcher imageFetcher
+	rdb     *redis.Client
 	limiter *redis_rate.Limiter
 }
+
+var _ gen.ServerInterface = (*Server)(nil)
 
 // NewServer wires the handler dependencies. images is satisfied by
 // *db.Queries and fetcher by *fetch.Client; unit tests inject fakes.
@@ -31,6 +33,7 @@ func NewServer(cfg config.Config, store storage.Storage, images imageStore, rdb 
 		store:   store,
 		images:  images,
 		fetcher: fetcher,
+		rdb:     rdb,
 		limiter: redis_rate.NewLimiter(rdb),
 	}
 }
