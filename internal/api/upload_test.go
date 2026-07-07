@@ -17,10 +17,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/pyaethu-aung/image-server/internal/api/gen"
 	"github.com/pyaethu-aung/image-server/internal/config"
@@ -35,6 +37,7 @@ type fakeImageStore struct {
 	getByHash   func(hash string) (db.Image, error)
 	getByID     func(id uuid.UUID) (db.Image, error)
 	create      func(arg db.CreateImageParams) (db.Image, error)
+	deleteByID  func(id uuid.UUID) (db.Image, error)
 	createCalls int
 	lastCreate  db.CreateImageParams
 }
@@ -62,7 +65,10 @@ func (f *fakeImageStore) GetImage(_ context.Context, id uuid.UUID) (db.Image, er
 	return db.Image{}, pgx.ErrNoRows
 }
 
-func (f *fakeImageStore) DeleteImage(_ context.Context, _ uuid.UUID) (db.Image, error) {
+func (f *fakeImageStore) DeleteImage(_ context.Context, id uuid.UUID) (db.Image, error) {
+	if f.deleteByID != nil {
+		return f.deleteByID(id)
+	}
 	return db.Image{}, pgx.ErrNoRows
 }
 
@@ -101,6 +107,8 @@ type uploadHarness struct {
 	srv    *httptest.Server
 	store  storage.Storage
 	images *fakeImageStore
+	rdb    *redis.Client
+	mr     *miniredis.Miniredis
 }
 
 func newUploadHarness(t *testing.T, cfg config.Config, images *fakeImageStore, fetcher imageFetcher, st storage.Storage) *uploadHarness {
@@ -112,10 +120,10 @@ func newUploadHarness(t *testing.T, cfg config.Config, images *fakeImageStore, f
 		}
 		st = local
 	}
-	rdb, _ := newTestRedis(t)
+	rdb, mr := newTestRedis(t)
 	srv := httptest.NewServer(NewRouter(NewServer(cfg, st, images, rdb, fetcher)))
 	t.Cleanup(srv.Close)
-	return &uploadHarness{srv: srv, store: st, images: images}
+	return &uploadHarness{srv: srv, store: st, images: images, rdb: rdb, mr: mr}
 }
 
 // pngBytes returns an encoded w x h PNG.

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -18,10 +19,11 @@ const testAPIKey = "test-key"
 
 func testConfig() config.Config {
 	return config.Config{
-		APIKey:          testAPIKey,
-		MaxUploadBytes:  1 << 20,
-		MaxPixels:       1_000_000,
-		RateLimitPerMin: 100,
+		APIKey:             testAPIKey,
+		MaxUploadBytes:     1 << 20,
+		MaxPixels:          1_000_000,
+		RateLimitPerMin:    100,
+		DerivativeCacheTTL: time.Hour,
 	}
 }
 

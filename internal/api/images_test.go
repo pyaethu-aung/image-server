@@ -39,16 +39,16 @@ func (h *uploadHarness) get(t *testing.T, path string, withKey bool) (int, http.
 	return resp.StatusCode, resp.Header, body
 }
 
-// storeOriginal writes data to a fresh local storage at a fixed key and
+// storeOriginal writes PNG data to a fresh local storage at a fixed key and
 // returns the storage plus the key, mirroring how ingest stores originals.
-func storeOriginal(t *testing.T, data []byte, mime string) (storage.Storage, string) {
+func storeOriginal(t *testing.T, data []byte) (storage.Storage, string) {
 	t.Helper()
 	st, err := storage.NewLocal(t.TempDir())
 	if err != nil {
 		t.Fatalf("storage.NewLocal: %v", err)
 	}
 	key := "originals/aa/bb/deadbeef"
-	if err := st.Put(context.Background(), key, bytes.NewReader(data), mime); err != nil {
+	if err := st.Put(context.Background(), key, bytes.NewReader(data), "image/png"); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	return st, key
@@ -77,7 +77,7 @@ func imageConfig() config.Config {
 
 func TestGetImageOriginal(t *testing.T) {
 	data := pngBytes(t, 8, 6)
-	st, key := storeOriginal(t, data, "image/png")
+	st, key := storeOriginal(t, data)
 	id := uuid.New()
 	row := imageRow(id, key, 8, 6, len(data))
 	images := &fakeImageStore{getByID: func(uuid.UUID) (db.Image, error) { return row, nil }}
@@ -101,7 +101,7 @@ func TestGetImageOriginal(t *testing.T) {
 
 func TestGetImageTransformed(t *testing.T) {
 	data := pngBytes(t, 40, 20)
-	st, key := storeOriginal(t, data, "image/png")
+	st, key := storeOriginal(t, data)
 	id := uuid.New()
 	row := imageRow(id, key, 40, 20, len(data))
 	images := &fakeImageStore{getByID: func(uuid.UUID) (db.Image, error) { return row, nil }}

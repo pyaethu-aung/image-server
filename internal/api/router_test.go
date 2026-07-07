@@ -78,26 +78,6 @@ func TestRouterBindingError(t *testing.T) {
 	}
 }
 
-// TestRouterUnimplemented: endpoints from later steps must 501 through the
-// embedded gen.Unimplemented, behind auth. DELETE (Step 5) is the remaining
-// unimplemented endpoint.
-func TestRouterUnimplemented(t *testing.T) {
-	srv := httptest.NewServer(newTestRouter(t))
-	defer srv.Close()
-
-	url := srv.URL + "/v1/images/7d444840-9dc0-11d1-b245-5ffdce74fad2"
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, url, nil)
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
-	req.Header.Set("X-API-Key", testAPIKey)
-	resp, err := srv.Client().Do(req)
-	if err != nil {
-		t.Fatalf("GET: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotImplemented)
-	}
-}
+// Every endpoint is implemented as of step 5, enforced at compile time by
+// the gen.ServerInterface assertion in server.go, so the old 501 router test
+// has no subject left and was removed.
