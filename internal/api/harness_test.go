@@ -102,10 +102,11 @@ func newAPIHarness(t *testing.T, mutate func(*config.Config)) *apiHarness {
 	t.Helper()
 
 	cfg := config.Config{
-		APIKey:          "apitest-key",
-		MaxUploadBytes:  1 << 20,
-		MaxPixels:       50_000_000,
-		RateLimitPerMin: 1000,
+		APIKey:             "apitest-key",
+		MaxUploadBytes:     1 << 20,
+		MaxPixels:          50_000_000,
+		RateLimitPerMin:    1000,
+		DerivativeCacheTTL: time.Hour,
 	}
 	if mutate != nil {
 		mutate(&cfg)

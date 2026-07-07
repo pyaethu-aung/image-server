@@ -194,6 +194,62 @@ func TestAPIGetImageNotFound(t *testing.T) {
 	}
 }
 
+func TestAPITransformCacheRoundTrip(t *testing.T) {
+	h := newAPIHarness(t, nil)
+	id := h.uploadPNG(t, 60, 40)
+	path := "/v1/images/" + id.String() + "?w=30&fmt=webp&q=80"
+
+	// First GET generates the derivative (cache miss)...
+	status, _, first := h.doValidated(t, h.newReq(t, http.MethodGet, path, "", nil, true))
+	if status != http.StatusOK {
+		t.Fatalf("miss status = %d, want %d", status, http.StatusOK)
+	}
+	// ...the second serves the same bytes from the cache.
+	status, header, second := h.doValidated(t, h.newReq(t, http.MethodGet, path, "", nil, true))
+	if status != http.StatusOK {
+		t.Fatalf("hit status = %d, want %d", status, http.StatusOK)
+	}
+	if ct := header.Get("Content-Type"); ct != "image/webp" {
+		t.Errorf("hit Content-Type = %q, want image/webp", ct)
+	}
+	if !bytes.Equal(first, second) {
+		t.Error("cache hit served different bytes than the generating request")
+	}
+}
+
+func TestAPIDeleteImage(t *testing.T) {
+	h := newAPIHarness(t, nil)
+	id := h.uploadPNG(t, 20, 10)
+	// Materialize a derivative so the purge has something real to remove.
+	h.doValidated(t, h.newReq(t, http.MethodGet, "/v1/images/"+id.String()+"?w=10", "", nil, true))
+
+	status, _, _ := h.doValidated(t, h.newReq(t, http.MethodDelete, "/v1/images/"+id.String(), "", nil, true))
+	if status != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d", status, http.StatusNoContent)
+	}
+
+	// The image is gone from every read path.
+	for _, path := range []string{"/v1/images/" + id.String(), "/v1/images/" + id.String() + "/meta"} {
+		status, _, _ := h.doValidated(t, h.newReq(t, http.MethodGet, path, "", nil, true))
+		if status != http.StatusNotFound {
+			t.Errorf("GET %s after delete = %d, want %d", path, status, http.StatusNotFound)
+		}
+	}
+	// And a second delete is a 404, not an error.
+	status, _, _ = h.doValidated(t, h.newReq(t, http.MethodDelete, "/v1/images/"+id.String(), "", nil, true))
+	if status != http.StatusNotFound {
+		t.Errorf("second delete = %d, want %d", status, http.StatusNotFound)
+	}
+}
+
+func TestAPIDeleteImageUnauthorized(t *testing.T) {
+	h := newAPIHarness(t, nil)
+	status, _, _ := h.doValidated(t, h.newReq(t, http.MethodDelete, "/v1/images/"+uuid.New().String(), "", nil, false))
+	if status != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", status, http.StatusUnauthorized)
+	}
+}
+
 func TestAPIGetImageUnauthorized(t *testing.T) {
 	h := newAPIHarness(t, nil)
 	status, _, _ := h.doValidated(t, h.newReq(t, http.MethodGet, "/v1/images/"+uuid.New().String(), "", nil, false))
