@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/url"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestParseTransform(t *testing.T) {
@@ -117,6 +119,84 @@ func TestFormatContentType(t *testing.T) {
 			t.Errorf("Format(%q).ContentType() = %q, want %q", tt.f, got, tt.want)
 		}
 	}
+}
+
+func TestCacheKey(t *testing.T) {
+	id := uuid.MustParse("7d444840-9dc0-11d1-b245-5ffdce74fad2")
+	otherID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+
+	parse := func(t *testing.T, query string) Transform {
+		t.Helper()
+		q, err := url.ParseQuery(query)
+		if err != nil {
+			t.Fatalf("ParseQuery(%q): %v", query, err)
+		}
+		tr, err := ParseTransform(q)
+		if err != nil {
+			t.Fatalf("ParseTransform(%q): %v", query, err)
+		}
+		return tr
+	}
+
+	t.Run("param order does not change the key", func(t *testing.T) {
+		a := CacheKey(id, parse(t, "w=100&h=200"))
+		b := CacheKey(id, parse(t, "h=200&w=100"))
+		if a != b {
+			t.Errorf("keys differ for reordered params: %q vs %q", a, b)
+		}
+	})
+
+	t.Run("deterministic across calls", func(t *testing.T) {
+		// Two structurally equal but distinct Transform values must hash the
+		// same (guards against any pointer- or order-sensitive serialization).
+		a := CacheKey(id, parse(t, "w=800&fmt=webp&q=80&fit=cover"))
+		b := CacheKey(id, parse(t, "w=800&fmt=webp&q=80&fit=cover"))
+		if a != b {
+			t.Errorf("same input produced different keys: %q vs %q", a, b)
+		}
+	})
+
+	t.Run("known value is stable across runs", func(t *testing.T) {
+		// Pins the canonical serialization: if this changes, every cached
+		// derivative is silently orphaned, so treat a diff here as breaking.
+		got := CacheKey(id, Transform{Width: 100, Height: 200})
+		want := "34a5fbf6590d2f57807e034b142155dce3923c99dcbc25a0ee544b7bc62d4e4c"
+		if got != want {
+			t.Errorf("CacheKey = %q, want pinned %q", got, want)
+		}
+	})
+
+	t.Run("distinct inputs produce distinct keys", func(t *testing.T) {
+		base := parse(t, "w=100&h=200")
+		seen := map[string]string{CacheKey(id, base): "base"}
+		distinct := map[string]Transform{
+			"different width":  parse(t, "w=101&h=200"),
+			"different height": parse(t, "w=100&h=201"),
+			"format set":       parse(t, "w=100&h=200&fmt=webp"),
+			"quality set":      parse(t, "w=100&h=200&q=80"),
+			"fit set":          parse(t, "w=100&h=200&fit=cover"),
+			"identity":         {},
+			"jpeg vs png":      parse(t, "w=100&h=200&fmt=png"),
+			"contain vs cover": parse(t, "w=100&h=200&fit=contain"),
+			"quality boundary": parse(t, "w=100&h=200&q=100"),
+			"width only":       parse(t, "w=100"),
+			"height only":      parse(t, "h=200"),
+		}
+		for name, tr := range distinct {
+			k := CacheKey(id, tr)
+			if prev, dup := seen[k]; dup {
+				t.Errorf("%s collides with %s (key %q)", name, prev, k)
+			}
+			seen[k] = name
+		}
+	})
+
+	t.Run("different image ids differ", func(t *testing.T) {
+		tr := parse(t, "w=100")
+		if CacheKey(id, tr) == CacheKey(otherID, tr) {
+			t.Error("same transform on different images produced the same key")
+		}
+	})
 }
 
 func TestParamErrorMessage(t *testing.T) {

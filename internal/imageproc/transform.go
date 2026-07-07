@@ -1,9 +1,13 @@
 package imageproc
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"strconv"
+
+	"github.com/google/uuid"
 )
 
 // Format is a requested output image format.
@@ -49,6 +53,19 @@ type Transform struct {
 // case the original bytes can be served without touching libvips.
 func (t Transform) IsIdentity() bool {
 	return t == Transform{}
+}
+
+// CacheKey returns a deterministic cache key for one image + transform pair:
+// hex(sha256(imageID + "|" + canonical)). The canonical form serializes every
+// field in a fixed order with stable sentinels for unset values (w=0, fmt=,
+// ...), so two URLs that differ only in query-param order hash identically.
+// Format is deliberately NOT defaulted to the source type here: the key must
+// not depend on per-image metadata.
+func CacheKey(imageID uuid.UUID, t Transform) string {
+	canonical := fmt.Sprintf("w=%d|h=%d|fmt=%s|q=%d|fit=%s",
+		t.Width, t.Height, t.Format, t.Quality, t.Fit)
+	sum := sha256.Sum256([]byte(imageID.String() + "|" + canonical))
+	return hex.EncodeToString(sum[:])
 }
 
 // ParamError describes a single invalid transform query parameter. Handlers
