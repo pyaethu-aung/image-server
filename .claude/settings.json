@@ -1,5 +1,6 @@
 {
   "enabledPlugins": {
-    "git-workflow@pyaethu-aung-skills": true
+    "git-workflow@pyaethu-aung-skills": true,
+    "go-dev@pyaethu-aung-skills": true
   }
 }
