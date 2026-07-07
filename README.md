@@ -1,5 +1,10 @@
 # image-server
 
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](docs/openapi/image-server.yaml)
+[![CI](https://github.com/pyaethu-aung/image-server/actions/workflows/ci.yml/badge.svg)](https://github.com/pyaethu-aung/image-server/actions/workflows/ci.yml)
+[![Docker](https://github.com/pyaethu-aung/image-server/actions/workflows/docker.yml/badge.svg)](https://github.com/pyaethu-aung/image-server/actions/workflows/docker.yml)
+[![Security](https://github.com/pyaethu-aung/image-server/actions/workflows/security.yml/badge.svg)](https://github.com/pyaethu-aung/image-server/actions/workflows/security.yml)
+
 An image upload and transformation service in Go. Upload images via multipart form or by URL, store originals on local disk behind a pluggable storage interface, and serve them back with on-the-fly transforms (resize, format conversion, quality, fit) via URL query params. Generated derivatives are cached so repeated transforms are served from cache, not recomputed.
 
 > **Status: core HTTP service complete.** Uploads (`POST /v1/images`, `POST /v1/images/from-url`), reads (`GET /v1/images/{id}`, original or transformed, plus `/meta`), derivative caching, and `DELETE` are all live and tested. See [CLAUDE.md](CLAUDE.md) for the architecture decisions. Next on the roadmap: an MCP server interface, then an S3 storage backend.
