@@ -4,6 +4,9 @@ package api
 
 import (
 	"bytes"
+	"image"
+	"image/color"
+	"image/gif"
 	"net/http"
 	"strings"
 	"testing"
@@ -12,6 +15,17 @@ import (
 
 	"github.com/pyaethu-aung/image-server/internal/config"
 )
+
+// gifBytes builds a small GIF, a format with no lossless strip support.
+func gifBytes(t *testing.T, w, h int) []byte {
+	t.Helper()
+	m := image.NewPaletted(image.Rect(0, 0, w, h), color.Palette{color.Black, color.White})
+	var buf bytes.Buffer
+	if err := gif.Encode(&buf, m, nil); err != nil {
+		t.Fatalf("gif.Encode: %v", err)
+	}
+	return buf.Bytes()
+}
 
 func TestAPIHealthz(t *testing.T) {
 	h := newAPIHarness(t, nil)
@@ -163,6 +177,44 @@ func TestAPIGetImageOriginalAndTransform(t *testing.T) {
 	}
 	if header.Get("Cache-Control") == "" {
 		t.Error("derivative response missing Cache-Control")
+	}
+}
+
+func TestAPIGetImageStripLossless(t *testing.T) {
+	h := newAPIHarness(t, nil)
+	data := jpegWithExif(t, 48, 32)
+	body, ct := multipartBody(t, "file", "photo.jpg", data)
+	status, _, respBody := h.doValidated(t, h.newReq(t, http.MethodPost, "/v1/images", ct, body, true))
+	if status != http.StatusCreated {
+		t.Fatalf("upload status = %d, want %d (body: %s)", status, http.StatusCreated, respBody)
+	}
+	id := decodeImage(t, respBody).Id.String()
+
+	status, header, stripped := h.doValidated(t, h.newReq(t, http.MethodGet, "/v1/images/"+id+"?strip=true", "", nil, true))
+	if status != http.StatusOK {
+		t.Fatalf("strip status = %d, want %d", status, http.StatusOK)
+	}
+	if ctype := header.Get("Content-Type"); ctype != "image/jpeg" {
+		t.Errorf("stripped Content-Type = %q, want image/jpeg", ctype)
+	}
+	if bytes.Contains(stripped, []byte(gpsMarker)) {
+		t.Error("stripped derivative still contains the EXIF marker")
+	}
+}
+
+func TestAPIGetImageStripUnsupportedFormat(t *testing.T) {
+	h := newAPIHarness(t, nil)
+	body, ct := multipartBody(t, "file", "anim.gif", gifBytes(t, 20, 20))
+	status, _, respBody := h.doValidated(t, h.newReq(t, http.MethodPost, "/v1/images", ct, body, true))
+	if status != http.StatusCreated {
+		t.Fatalf("upload status = %d, want %d (body: %s)", status, http.StatusCreated, respBody)
+	}
+	id := decodeImage(t, respBody).Id.String()
+
+	// Lossless strip is unsupported for GIF: a strip-only request is a 415.
+	status, _, _ = h.doValidated(t, h.newReq(t, http.MethodGet, "/v1/images/"+id+"?strip=true", "", nil, true))
+	if status != http.StatusUnsupportedMediaType {
+		t.Fatalf("strip status = %d, want %d", status, http.StatusUnsupportedMediaType)
 	}
 }
 
