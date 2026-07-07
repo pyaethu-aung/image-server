@@ -51,10 +51,11 @@ func Apply(src []byte, t Transform, maxPixels int64) ([]byte, string, error) {
 	}
 
 	opts := bimg.Options{
-		Width:   w,
-		Height:  h,
-		Quality: t.Quality, // 0 lets bimg pick its default
-		Type:    bimgType(t.Format),
+		Width:         w,
+		Height:        h,
+		Quality:       t.Quality, // 0 lets bimg pick its default
+		Type:          bimgType(t.Format),
+		StripMetadata: t.Strip, // drop EXIF/XMP/ICC on this re-encode when asked
 	}
 	if t.Fit == FitCover {
 		opts.Crop = true

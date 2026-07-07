@@ -31,10 +31,12 @@ func TestParseTransform(t *testing.T) {
 		{name: "format webp", query: "fmt=webp", want: Transform{Format: FormatWebP}},
 		{name: "fit cover", query: "fit=cover", want: Transform{Fit: FitCover}},
 		{name: "fit contain", query: "fit=contain", want: Transform{Fit: FitContain}},
+		{name: "strip true", query: "strip=true", want: Transform{Strip: true}},
+		{name: "strip false is unset", query: "strip=false", want: Transform{}},
 		{
 			name:  "all params",
-			query: "w=800&h=600&fmt=webp&q=80&fit=cover",
-			want:  Transform{Width: 800, Height: 600, Format: FormatWebP, Quality: 80, Fit: FitCover},
+			query: "w=800&h=600&fmt=webp&q=80&fit=cover&strip=true",
+			want:  Transform{Width: 800, Height: 600, Format: FormatWebP, Quality: 80, Fit: FitCover, Strip: true},
 		},
 
 		{name: "width zero", query: "w=0", wantErrParam: "w"},
@@ -53,6 +55,9 @@ func TestParseTransform(t *testing.T) {
 		{name: "format empty value", query: "fmt=", wantErrParam: "fmt"},
 		{name: "fit invalid", query: "fit=squash", wantErrParam: "fit"},
 		{name: "fit empty value", query: "fit=", wantErrParam: "fit"},
+		{name: "strip invalid", query: "strip=yes", wantErrParam: "strip"},
+		{name: "strip numeric", query: "strip=1", wantErrParam: "strip"},
+		{name: "strip empty value", query: "strip=", wantErrParam: "strip"},
 	}
 
 	for _, tt := range tests {
@@ -95,11 +100,36 @@ func TestTransformIsIdentity(t *testing.T) {
 		{name: "format set", t: Transform{Format: FormatJPEG}, want: false},
 		{name: "quality set", t: Transform{Quality: 80}, want: false},
 		{name: "fit set", t: Transform{Fit: FitCover}, want: false},
+		{name: "strip set", t: Transform{Strip: true}, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.t.IsIdentity(); got != tt.want {
 				t.Errorf("IsIdentity() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTransformIsStripOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		t    Transform
+		want bool
+	}{
+		{name: "strip only", t: Transform{Strip: true}, want: true},
+		{name: "zero value", t: Transform{}, want: false},
+		{name: "strip false", t: Transform{Strip: false}, want: false},
+		{name: "strip with width", t: Transform{Strip: true, Width: 100}, want: false},
+		{name: "strip with height", t: Transform{Strip: true, Height: 100}, want: false},
+		{name: "strip with format", t: Transform{Strip: true, Format: FormatWebP}, want: false},
+		{name: "strip with quality", t: Transform{Strip: true, Quality: 80}, want: false},
+		{name: "strip with fit", t: Transform{Strip: true, Fit: FitCover}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.t.IsStripOnly(); got != tt.want {
+				t.Errorf("IsStripOnly() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -160,7 +190,7 @@ func TestCacheKey(t *testing.T) {
 		// Pins the canonical serialization: if this changes, every cached
 		// derivative is silently orphaned, so treat a diff here as breaking.
 		got := CacheKey(id, Transform{Width: 100, Height: 200})
-		want := "34a5fbf6590d2f57807e034b142155dce3923c99dcbc25a0ee544b7bc62d4e4c"
+		want := "e8d234dfccf843b43ee2cd264fc508e31c512fa25bdb8250dc551a618f7eb356"
 		if got != want {
 			t.Errorf("CacheKey = %q, want pinned %q", got, want)
 		}
@@ -181,6 +211,8 @@ func TestCacheKey(t *testing.T) {
 			"quality boundary": parse(t, "w=100&h=200&q=100"),
 			"width only":       parse(t, "w=100"),
 			"height only":      parse(t, "h=200"),
+			"strip set":        parse(t, "w=100&h=200&strip=true"),
+			"strip only":       parse(t, "strip=true"),
 		}
 		for name, tr := range distinct {
 			k := CacheKey(id, tr)

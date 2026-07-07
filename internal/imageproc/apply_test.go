@@ -142,6 +142,28 @@ func TestApplyQualityAffectsSize(t *testing.T) {
 	}
 }
 
+// TestApplyStripsMetadata covers the combined regime: a resize that also
+// strips. The EXIF payload spliced into the source must not survive the
+// libvips re-encode when Strip is set.
+func TestApplyStripsMetadata(t *testing.T) {
+	base := jpegBytes(t, 20, 20)
+	withExif := spliceAfterSOI(base, jpegSegment(0xE1, append([]byte("Exif\x00\x00"), []byte("secret-gps-payload")...)))
+	if !bytes.Contains(withExif, []byte("secret-gps-payload")) {
+		t.Fatal("test setup: EXIF payload not spliced into source")
+	}
+
+	out, _, err := Apply(withExif, Transform{Width: 10, Strip: true}, 1_000_000)
+	if err != nil {
+		t.Fatalf("Apply(strip): %v", err)
+	}
+	if bytes.Contains(out, []byte("secret-gps-payload")) {
+		t.Error("EXIF payload survived the strip re-encode")
+	}
+	if _, err := jpeg.Decode(bytes.NewReader(out)); err != nil {
+		t.Errorf("stripped output does not decode: %v", err)
+	}
+}
+
 func TestApplyBombGuard(t *testing.T) {
 	src := noisyPNG(t, 100, 50) // 5000 pixels
 	_, _, err := Apply(src, Transform{Width: 10}, 4_999)
