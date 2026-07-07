@@ -20,4 +20,6 @@ RUN apt-get update \
 COPY --from=build /out/server /usr/local/bin/server
 USER app
 EXPOSE 8080
+HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=5 \
+  CMD ["server", "healthcheck"]
 ENTRYPOINT ["server"]
