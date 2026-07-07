@@ -47,12 +47,21 @@ type Transform struct {
 	Format  Format // output format; "" = keep source format
 	Quality int    // output quality 1..100 for lossy formats; 0 = unset
 	Fit     Fit    // resize mode; "" = unset
+	Strip   bool   // strip metadata (EXIF/XMP/IPTC/comments); false = keep
 }
 
 // IsIdentity reports whether the transform requests no change at all, in which
-// case the original bytes can be served without touching libvips.
+// case the original bytes can be served without touching libvips. Strip=true
+// is not identity: it must remove metadata, so it never takes the raw path.
 func (t Transform) IsIdentity() bool {
 	return t == Transform{}
+}
+
+// IsStripOnly reports whether the only requested change is metadata removal
+// (no resize, format change, or quality change). Such a request can be served
+// by a lossless, byte-preserving strip instead of a libvips re-encode.
+func (t Transform) IsStripOnly() bool {
+	return t.Strip && t == (Transform{Strip: true})
 }
 
 // CacheKey returns a deterministic cache key for one image + transform pair:
@@ -62,8 +71,8 @@ func (t Transform) IsIdentity() bool {
 // Format is deliberately NOT defaulted to the source type here: the key must
 // not depend on per-image metadata.
 func CacheKey(imageID uuid.UUID, t Transform) string {
-	canonical := fmt.Sprintf("w=%d|h=%d|fmt=%s|q=%d|fit=%s",
-		t.Width, t.Height, t.Format, t.Quality, t.Fit)
+	canonical := fmt.Sprintf("w=%d|h=%d|fmt=%s|q=%d|fit=%s|strip=%t",
+		t.Width, t.Height, t.Format, t.Quality, t.Fit, t.Strip)
 	sum := sha256.Sum256([]byte(imageID.String() + "|" + canonical))
 	return hex.EncodeToString(sum[:])
 }
@@ -103,7 +112,26 @@ func ParseTransform(q url.Values) (Transform, error) {
 	if t.Fit, err = parseFit(q); err != nil {
 		return Transform{}, err
 	}
+	if t.Strip, err = parseBool(q, "strip"); err != nil {
+		return Transform{}, err
+	}
 	return t, nil
+}
+
+// parseBool parses a boolean query param. An absent key returns false (unset);
+// only "true" and "false" are accepted, anything else is a *ParamError.
+func parseBool(q url.Values, key string) (bool, error) {
+	if !q.Has(key) {
+		return false, nil
+	}
+	switch q.Get(key) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, &ParamError{Param: key, Msg: "must be true or false"}
+	}
 }
 
 // parseBoundedInt parses an integer query param constrained to [min, max].
