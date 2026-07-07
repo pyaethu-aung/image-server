@@ -16,15 +16,8 @@ package api
 //     against a shared, developer-configured RATE_LIMIT_PER_MIN, and already
 //     covered by both the apitest suite and unit tests with miniredis.
 //   - GIF is skipped entirely (its fixture helper is apitest-tagged, not
-//     visible here).
-//   - The `strip` query param (and its 415/lossless behavior) is not covered
-//     here: this branch is cut off `main`, which does not yet have the
-//     (separate, unmerged) metadata-stripping feature. Once that feature
-//     merges to main, a follow-up should add strip-focused e2e coverage
-//     (TestE2EStripLossless / TestE2EStripUnsupportedFormat) reusing
-//     jpegWithExif/gpsMarker from images_strip_test.go the same way apitest
-//     does. Deliberately not added now to keep this e2e-testing branch
-//     mergeable independently of that unrelated, still-in-flight feature.
+//     visible here); the strip-unsupported-format case uses a tiny literal
+//     WebP fixture instead, which is also a lossless-strip-unsupported format.
 //
 // Data lifecycle: the live container's Postgres/Redis/storage volumes are the
 // SAME ones a developer's `make up` session uses. Never TRUNCATE or FlushDB.
@@ -34,7 +27,8 @@ package api
 // shared content-hash dedup + delete-in-cleanup design.
 //
 // Reuses untagged fixture helpers already in this package for free:
-// pngBytes, multipartBody, decodeImage (upload_test.go).
+// pngBytes, multipartBody, decodeImage (upload_test.go), jpegWithExif,
+// gpsMarker (images_strip_test.go).
 
 import (
 	"bytes"
@@ -53,6 +47,16 @@ import (
 
 	"github.com/pyaethu-aung/image-server/internal/api/gen"
 )
+
+// e2eWebP1x1 is a minimal valid 1x1 lossless WebP (VP8L) file: a format with
+// no lossless strip support, used only for the strip-415 case. Duplicated
+// from internal/imageproc/detect_test.go's unexported webp1x1 (different
+// package, not importable); keep it in sync if that literal ever changes.
+var e2eWebP1x1 = []byte{
+	'R', 'I', 'F', 'F', 0x1a, 0x00, 0x00, 0x00, 'W', 'E', 'B', 'P',
+	'V', 'P', '8', 'L', 0x0d, 0x00, 0x00, 0x00,
+	0x2f, 0x00, 0x00, 0x00, 0x10, 0x07, 0x10, 0x11, 0x11, 0x88, 0x88, 0xfe, 0x07, 0x00,
+}
 
 // e2eHarness targets a live base URL instead of an httptest.Server. Config
 // (API key, upload limits, rate limit) is whatever the running container's
@@ -300,6 +304,36 @@ func TestE2EGetOriginalAndTransform(t *testing.T) {
 	}
 	if len(deriv) == 0 {
 		t.Error("derivative body is empty")
+	}
+}
+
+func TestE2EStripLossless(t *testing.T) {
+	h := newE2EHarness(t)
+	data := jpegWithExif(t, 48, 32)
+	img := h.uploadAndTrack(t, "e2e-strip.jpg", data)
+
+	status, header, stripped := h.doValidated(t, h.newReq(t, http.MethodGet, "/v1/images/"+img.Id.String()+"?strip=true", "", nil, true))
+	if status != http.StatusOK {
+		t.Fatalf("strip status = %d, want %d", status, http.StatusOK)
+	}
+	if ctype := header.Get("Content-Type"); ctype != "image/jpeg" {
+		t.Errorf("stripped Content-Type = %q, want image/jpeg", ctype)
+	}
+	if bytes.Contains(stripped, []byte(gpsMarker)) {
+		t.Error("stripped derivative still contains the EXIF marker")
+	}
+}
+
+// TestE2EStripUnsupportedFormat: WebP has no lossless strip support, so a
+// strip-only request is a 415 (GIF's equivalent case is already covered by
+// the in-process apitest suite; see the file doc comment).
+func TestE2EStripUnsupportedFormat(t *testing.T) {
+	h := newE2EHarness(t)
+	img := h.uploadAndTrack(t, "e2e-strip.webp", e2eWebP1x1)
+
+	status, _, _ := h.doValidated(t, h.newReq(t, http.MethodGet, "/v1/images/"+img.Id.String()+"?strip=true", "", nil, true))
+	if status != http.StatusUnsupportedMediaType {
+		t.Errorf("strip status = %d, want %d", status, http.StatusUnsupportedMediaType)
 	}
 }
 
