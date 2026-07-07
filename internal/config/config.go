@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config holds all server configuration. Everything comes from env vars;
@@ -20,6 +21,9 @@ type Config struct {
 	RateLimitPerMin int
 	// CacheControlMaxAge is the max-age (seconds) sent on served image bytes.
 	CacheControlMaxAge int
+	// DerivativeCacheTTL is how long Redis remembers a generated derivative.
+	// Storage stays authoritative; expiry only costs an Exists check.
+	DerivativeCacheTTL time.Duration
 }
 
 // Load reads configuration from the environment. API_KEY and DATABASE_URL
@@ -59,6 +63,11 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.CacheControlMaxAge = int(maxAge)
+	// Default 30 days: long enough that hot derivatives stay marker-served,
+	// short enough that markers for deleted images cannot linger forever.
+	if cfg.DerivativeCacheTTL, err = getenvDuration("DERIVATIVE_CACHE_TTL", 720*time.Hour); err != nil {
+		return Config{}, err
+	}
 
 	if cfg.MaxUploadBytes <= 0 {
 		return Config{}, fmt.Errorf("MAX_UPLOAD_BYTES must be positive")
@@ -71,6 +80,9 @@ func Load() (Config, error) {
 	}
 	if cfg.CacheControlMaxAge < 0 {
 		return Config{}, fmt.Errorf("CACHE_CONTROL_MAX_AGE must not be negative")
+	}
+	if cfg.DerivativeCacheTTL <= 0 {
+		return Config{}, fmt.Errorf("DERIVATIVE_CACHE_TTL must be positive")
 	}
 
 	return cfg, nil
@@ -93,4 +105,16 @@ func getenvInt64(key string, def int64) (int64, error) {
 		return 0, fmt.Errorf("%s: not a valid integer: %q", key, v)
 	}
 	return n, nil
+}
+
+func getenvDuration(key string, def time.Duration) (time.Duration, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("%s: not a valid duration (e.g. \"720h\"): %q", key, v)
+	}
+	return d, nil
 }

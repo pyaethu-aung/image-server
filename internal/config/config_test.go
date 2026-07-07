@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // clearEnv unsets every config variable so tests are hermetic against
@@ -11,7 +12,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		"API_KEY", "LISTEN_ADDR", "DATABASE_URL", "REDIS_ADDR",
 		"STORAGE_PATH", "MAX_UPLOAD_BYTES", "MAX_PIXELS", "RATE_LIMIT_PER_MIN",
-		"CACHE_CONTROL_MAX_AGE",
+		"CACHE_CONTROL_MAX_AGE", "DERIVATIVE_CACHE_TTL",
 	} {
 		t.Setenv(k, "")
 	}
@@ -41,6 +42,7 @@ func TestLoadDefaults(t *testing.T) {
 		MaxPixels:          50_000_000,
 		RateLimitPerMin:    120,
 		CacheControlMaxAge: 31_536_000,
+		DerivativeCacheTTL: 720 * time.Hour,
 	}
 	if cfg != want {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
@@ -56,6 +58,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("MAX_PIXELS", "1000000")
 	t.Setenv("RATE_LIMIT_PER_MIN", "10")
 	t.Setenv("CACHE_CONTROL_MAX_AGE", "3600")
+	t.Setenv("DERIVATIVE_CACHE_TTL", "24h")
 
 	cfg, err := Load()
 	if err != nil {
@@ -72,6 +75,7 @@ func TestLoadOverrides(t *testing.T) {
 		MaxPixels:          1000000,
 		RateLimitPerMin:    10,
 		CacheControlMaxAge: 3600,
+		DerivativeCacheTTL: 24 * time.Hour,
 	}
 	if cfg != want {
 		t.Errorf("Load() = %+v, want %+v", cfg, want)
@@ -149,6 +153,20 @@ func TestLoadErrors(t *testing.T) {
 				"API_KEY": "k", "DATABASE_URL": "d", "CACHE_CONTROL_MAX_AGE": "-1",
 			},
 			wantErr: "CACHE_CONTROL_MAX_AGE must not be negative",
+		},
+		{
+			name: "non-duration DERIVATIVE_CACHE_TTL",
+			env: map[string]string{
+				"API_KEY": "k", "DATABASE_URL": "d", "DERIVATIVE_CACHE_TTL": "monthly",
+			},
+			wantErr: "DERIVATIVE_CACHE_TTL",
+		},
+		{
+			name: "zero DERIVATIVE_CACHE_TTL",
+			env: map[string]string{
+				"API_KEY": "k", "DATABASE_URL": "d", "DERIVATIVE_CACHE_TTL": "0s",
+			},
+			wantErr: "DERIVATIVE_CACHE_TTL must be positive",
 		},
 	}
 
