@@ -146,6 +146,10 @@ curl -H "X-API-Key: $API_KEY" \
 # 400x400 thumbnail, cropped to fill
 curl -H "X-API-Key: $API_KEY" \
   "http://localhost:8080/v1/images/1b4e28ba-2fa1-4d3b-9558-b7f6f18e3c2a?w=400&h=400&fit=cover" -o thumb.jpg
+
+# Strip metadata (EXIF/GPS, XMP, IPTC) from the served image
+curl -H "X-API-Key: $API_KEY" \
+  "http://localhost:8080/v1/images/1b4e28ba-2fa1-4d3b-9558-b7f6f18e3c2a?strip=true" -o clean.jpg
 ```
 
 Transform query params:
@@ -157,8 +161,14 @@ Transform query params:
 | `fmt` | `jpeg`, `png`, `webp` | output format |
 | `q` | 1 to 100 | output quality (lossy formats) |
 | `fit` | `cover`, `contain` | `cover` crops to fill w x h; `contain` fits within w x h |
+| `strip` | `true`, `false` | remove metadata (EXIF/GPS, XMP, IPTC, comments) from the served image |
 
 Each unique combination is generated once and cached; responses include `Cache-Control` headers.
+
+`strip` never touches the stored original. On its own it is a lossless,
+byte-preserving removal for JPEG and PNG; for other formats on their own it
+returns `415` (add `fmt` to strip via a re-encode). Combined with a resize or
+format change, the strip happens during that re-encode.
 
 ### Get image metadata
 

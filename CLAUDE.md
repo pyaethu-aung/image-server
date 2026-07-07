@@ -122,13 +122,18 @@ Dedup on `content_hash` with a unique constraint: an identical upload returns th
 - Derivatives live under a separate storage prefix (e.g. `derivatives/`) from originals. Check Redis for the cache key, and `Storage.Exists`, before regenerating.
 - Serve responses with appropriate `Cache-Control` headers.
 
+### Metadata stripping (`strip` param)
+
+- `strip=true` on `GET /v1/images/{id}` removes metadata (EXIF including GPS, XMP, IPTC, comments) from the served image. The stored original is never modified; the stripped result is a cached derivative like any other (`strip` is part of the `CacheKey` canonical form).
+- Two regimes: (1) strip combined with a resize/format change re-encodes via libvips with `StripMetadata` set (`internal/imageproc/apply.go`); (2) a strip-only request (`IsStripOnly`) uses a lossless, byte-preserving segment/chunk removal that never re-encodes pixels (`internal/imageproc/strip.go`, pure Go, no cgo). Lossless strip is implemented for JPEG and PNG; other formats on their own return `415` (checked via `CanStripLossless` before storage is touched), with `fmt` as the re-encode escape hatch.
+
 ### Endpoints
 
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/v1/images` | multipart upload, returns id + metadata |
 | POST | `/v1/images/from-url` | JSON `{"url": "..."}`, server fetches |
-| GET | `/v1/images/{id}` | original, or transformed via `w`, `h`, `fmt` (jpeg/png/webp), `q`, `fit` (cover/contain) |
+| GET | `/v1/images/{id}` | original, or transformed via `w`, `h`, `fmt` (jpeg/png/webp), `q`, `fit` (cover/contain), `strip` (true/false) |
 | GET | `/v1/images/{id}/meta` | metadata JSON |
 | DELETE | `/v1/images/{id}` | delete original, derivatives, metadata |
 | GET | `/healthz` | no auth |
