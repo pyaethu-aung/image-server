@@ -49,6 +49,15 @@ func (s *Server) GetImage(w http.ResponseWriter, r *http.Request, id gen.ImageID
 		s.serveOriginal(w, r, img)
 		return
 	}
+	// A strip-only request is served by a lossless byte-level strip, which is
+	// only implemented for some formats; reject the rest before touching
+	// storage. Strip combined with a resize/format change re-encodes via
+	// libvips instead (handled in serveTransformed) and needs no such guard.
+	if t.IsStripOnly() && !imageproc.CanStripLossless(strings.TrimPrefix(img.MimeType, "image/")) {
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
+			"lossless metadata strip is unsupported for "+img.MimeType+"; add fmt to strip via re-encode")
+		return
+	}
 	s.serveTransformed(w, r, img, t)
 }
 
@@ -140,9 +149,9 @@ func (s *Server) serveTransformed(w http.ResponseWriter, r *http.Request, img db
 		internalError("read original", err).write(w)
 		return
 	}
-	out, _, err := imageproc.Apply(src, t, s.cfg.MaxPixels)
+	out, err := s.render(src, img, t)
 	if err != nil {
-		internalError("apply transform", err).write(w)
+		internalError("render derivative", err).write(w)
 		return
 	}
 	if err := s.store.Put(ctx, derivKey, bytes.NewReader(out), contentType); err != nil {
@@ -162,6 +171,18 @@ func (s *Server) serveTransformed(w http.ResponseWriter, r *http.Request, img db
 	if _, err := w.Write(out); err != nil { //nolint:gosec // G705: image bytes, not HTML; served nosniff with an image/* type
 		slog.Error("serve transformed", "err", err, "id", img.ID)
 	}
+}
+
+// render produces the derivative bytes for img + t. A strip-only transform is
+// a lossless byte-level metadata removal; anything else re-encodes via libvips
+// (which also strips metadata when t.Strip is set). CanStripLossless is checked
+// upstream, so StripMetadata here never returns ErrStripUnsupported.
+func (s *Server) render(src []byte, img db.Image, t imageproc.Transform) ([]byte, error) {
+	if t.IsStripOnly() {
+		return imageproc.StripMetadata(src, strings.TrimPrefix(img.MimeType, "image/"))
+	}
+	out, _, err := imageproc.Apply(src, t, s.cfg.MaxPixels)
+	return out, err
 }
 
 // serveDerivative streams a stored derivative. It reports true when the
