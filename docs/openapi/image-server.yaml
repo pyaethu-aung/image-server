@@ -134,6 +134,17 @@ paths:
           schema:
             type: string
             enum: [cover, contain]
+        - name: strip
+          in: query
+          description: |
+            Strip metadata (EXIF, including GPS, plus XMP/IPTC and comments)
+            from the served image. The stored original is never modified.
+            When combined with a resize or format change the strip is applied
+            during that re-encode; on its own it is a lossless, byte-preserving
+            removal for JPEG and PNG. Lossless strip is unsupported for other
+            formats on its own and returns 415 (add fmt to strip via re-encode).
+          schema:
+            type: boolean
       responses:
         "200":
           description: Image bytes
@@ -161,6 +172,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "429":
           $ref: "#/components/responses/TooManyRequests"
     delete:
