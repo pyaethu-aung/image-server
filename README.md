@@ -73,6 +73,18 @@ The repo ships hooks in `.githooks/`, activated by `make setup` (`git config cor
 
 CI re-runs the same gates on every PR (lint, coverage, generated-code drift, spec tests against real Postgres/Redis), builds the Docker image, runs `govulncheck`, and validates PR titles as Conventional Commits. Dependabot keeps Go modules, Docker base images, and Actions current.
 
+### Claude Code plugins (contributors)
+
+This repo's Claude Code workflows (commit messages, PRs, Go feature scaffolding) come from two plugins tracked in `.claude/settings.json`. If you use Claude Code on this repo, add the marketplace and install them once:
+
+```
+/plugin marketplace add pyaethu-aung/skills
+/plugin install git-workflow@pyaethu-aung-skills
+/plugin install go-dev@pyaethu-aung-skills
+```
+
+Run `/reload-plugins` after installing.
+
 ### Configuration
 
 All configuration is via environment variables. Never commit real credentials.
