@@ -61,8 +61,11 @@ paths:
       operationId: uploadImageFromURL
       summary: Upload an image by URL
       description: |
-        The server fetches the URL and stores the image. Only public http(s)
-        URLs are accepted; requests resolving to private, loopback,
+        The server fetches the URL and stores the image. The same formats as
+        the multipart upload are accepted (JPEG, PNG, GIF, WebP, TIFF, and the
+        HEIF family: HEIC, HEIF, AVIF), with the type detected from the fetched
+        bytes' magic bytes, not the URL or response Content-Type. Only public
+        http(s) URLs are accepted; requests resolving to private, loopback,
         link-local, or cloud-metadata addresses are rejected, including via
         redirects (SSRF guard).
       requestBody:
