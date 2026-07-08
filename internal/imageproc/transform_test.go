@@ -151,6 +151,28 @@ func TestFormatContentType(t *testing.T) {
 	}
 }
 
+func TestIsOutputFormat(t *testing.T) {
+	tests := []struct {
+		format string
+		want   bool
+	}{
+		{"jpeg", true},
+		{"png", true},
+		{"webp", true},
+		{"heic", false},
+		{"heif", false},
+		{"avif", false},
+		{"tiff", false},
+		{"gif", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := IsOutputFormat(tt.format); got != tt.want {
+			t.Errorf("IsOutputFormat(%q) = %v, want %v", tt.format, got, tt.want)
+		}
+	}
+}
+
 func TestCacheKey(t *testing.T) {
 	id := uuid.MustParse("7d444840-9dc0-11d1-b245-5ffdce74fad2")
 	otherID := uuid.MustParse("11111111-1111-1111-1111-111111111111")

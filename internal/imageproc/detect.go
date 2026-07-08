@@ -15,13 +15,15 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
+	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 )
 
 // Sentinel errors returned by detection and validation.
 var (
 	// ErrUnsupported means the bytes are not a supported image format
-	// (jpeg, png, gif, webp), as detected from magic bytes.
+	// (jpeg, png, gif, webp, tiff, heic, heif, avif), as detected from magic
+	// bytes.
 	ErrUnsupported = errors.New("imageproc: unsupported image format")
 	// ErrTooManyPixels means the decoded pixel count (width x height) would
 	// exceed the configured cap (decompression-bomb guard).
@@ -30,7 +32,7 @@ var (
 
 // Info describes a detected image.
 type Info struct {
-	Format   string // "jpeg", "png", "gif", "webp"
+	Format   string // "jpeg", "png", "gif", "webp", "tiff", "heic", "heif", "avif"
 	MimeType string // "image/jpeg", ...
 	Width    int
 	Height   int
@@ -40,6 +42,22 @@ type Info struct {
 // the dimensions from the header without decoding pixels. File extensions
 // and client-supplied Content-Type headers are deliberately ignored.
 func DetectImage(data []byte) (Info, error) {
+	// HEIF-family containers (heic/heif/avif) are ISOBMFF, which the stdlib
+	// image decoders do not recognise, so they are sniffed first from their
+	// box structure. Everything else goes through the registered decoders
+	// (jpeg, png, gif, webp, tiff).
+	if format, width, height, ok := detectHEIF(data); ok {
+		if width <= 0 || height <= 0 {
+			return Info{}, fmt.Errorf("%w: could not read %s dimensions", ErrUnsupported, format)
+		}
+		return Info{
+			Format:   format,
+			MimeType: "image/" + format,
+			Width:    width,
+			Height:   height,
+		}, nil
+	}
+
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return Info{}, fmt.Errorf("%w: %v", ErrUnsupported, err)

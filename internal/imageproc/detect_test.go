@@ -7,8 +7,21 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+// readFixture loads a committed testdata image (a real heic/avif/tiff produced
+// by libvips, which the stdlib decoders cannot generate).
+func readFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	return data
+}
 
 // encode renders a w x h image with the given stdlib encoder.
 func encode(t *testing.T, w, h int, enc func(*bytes.Buffer, image.Image) error) []byte {
@@ -64,6 +77,21 @@ func TestDetectImage(t *testing.T) {
 			name: "webp",
 			data: webp1x1,
 			want: Info{Format: "webp", MimeType: "image/webp", Width: 1, Height: 1},
+		},
+		{
+			name: "heic",
+			data: readFixture(t, "sample.heic"),
+			want: Info{Format: "heic", MimeType: "image/heic", Width: 128, Height: 64},
+		},
+		{
+			name: "avif",
+			data: readFixture(t, "sample.avif"),
+			want: Info{Format: "avif", MimeType: "image/avif", Width: 32, Height: 24},
+		},
+		{
+			name: "tiff",
+			data: readFixture(t, "sample.tiff"),
+			want: Info{Format: "tiff", MimeType: "image/tiff", Width: 32, Height: 24},
 		},
 		{
 			name:    "truncated jpeg header",

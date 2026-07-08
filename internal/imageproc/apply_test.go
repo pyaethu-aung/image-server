@@ -164,6 +164,43 @@ func TestApplyStripsMetadata(t *testing.T) {
 	}
 }
 
+// TestApplyDecodesNewInputFormats exercises the real libvips decode path for
+// the newly accepted input formats: each is resized and re-encoded to a
+// web-safe jpeg (the server never encodes back to heic/heif/avif/tiff).
+func TestApplyDecodesNewInputFormats(t *testing.T) {
+	tests := []struct {
+		fixture string
+		wantW   int // resized to width 16, aspect preserved
+		wantH   int
+	}{
+		{"sample.heic", 16, 8}, // 128x64 -> 16x8
+		{"sample.avif", 16, 12},
+		{"sample.tiff", 16, 12},
+	}
+	for _, tt := range tests {
+		t.Run(tt.fixture, func(t *testing.T) {
+			src := readFixture(t, tt.fixture)
+			out, ct, err := Apply(src, Transform{Width: 16, Format: FormatJPEG}, 1_000_000)
+			if err != nil {
+				t.Fatalf("Apply() error = %v", err)
+			}
+			if ct != "image/jpeg" {
+				t.Errorf("content type = %q, want image/jpeg", ct)
+			}
+			info, err := DetectImage(out)
+			if err != nil {
+				t.Fatalf("DetectImage(output): %v", err)
+			}
+			if info.Format != "jpeg" {
+				t.Errorf("output format = %q, want jpeg", info.Format)
+			}
+			if info.Width != tt.wantW || info.Height != tt.wantH {
+				t.Errorf("output dims = %dx%d, want %dx%d", info.Width, info.Height, tt.wantW, tt.wantH)
+			}
+		})
+	}
+}
+
 func TestApplyBombGuard(t *testing.T) {
 	src := noisyPNG(t, 100, 50) // 5000 pixels
 	_, _, err := Apply(src, Transform{Width: 10}, 4_999)
