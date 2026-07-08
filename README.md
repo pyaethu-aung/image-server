@@ -11,7 +11,7 @@ An image upload and transformation service in Go. Upload images via multipart fo
 
 ## Features
 
-- **Upload** via multipart file or by URL (server fetches it, with SSRF protection)
+- **Upload** via multipart file or by URL (server fetches it, with SSRF protection). Accepts JPEG, PNG, GIF, WebP, TIFF, and the HEIF family (HEIC/HEIF/AVIF, i.e. iPhone and modern Android photos)
 - **Local filesystem storage** for originals, behind a `Storage` interface (S3 planned as a second backend)
 - **On-the-fly transforms** on read: width, height, format (jpeg/png/webp), quality, fit mode
 - **Derivative caching**: each unique transform is generated once, stored under a separate prefix, and tracked in Redis
@@ -182,6 +182,11 @@ Transform query params:
 | `strip` | `true`, `false` | remove metadata (EXIF/GPS, XMP, IPTC, comments) from the served image |
 
 Each unique combination is generated once and cached; responses include `Cache-Control` headers.
+
+A HEIC, HEIF, AVIF, or TIFF original is served back unchanged when no transform
+is requested. Transforming one requires an explicit `fmt` (`jpeg`, `png`, or
+`webp`), since the server only encodes to those web formats; a transform without
+`fmt` on such a source returns `400`.
 
 `strip` never touches the stored original. On its own it is a lossless,
 byte-preserving removal for JPEG and PNG; for other formats on their own it
