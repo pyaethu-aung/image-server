@@ -8,6 +8,8 @@ import (
 	"image/color"
 	"image/gif"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,6 +17,17 @@ import (
 
 	"github.com/pyaethu-aung/image-server/internal/config"
 )
+
+// readImageprocFixture loads a real heic/avif/tiff fixture from the imageproc
+// package's testdata (the stdlib encoders cannot produce these formats).
+func readImageprocFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "imageproc", "testdata", name))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	return data
+}
 
 // gifBytes builds a small GIF, a format with no lossless strip support.
 func gifBytes(t *testing.T, w, h int) []byte {
@@ -177,6 +190,69 @@ func TestAPIGetImageOriginalAndTransform(t *testing.T) {
 	}
 	if header.Get("Cache-Control") == "" {
 		t.Error("derivative response missing Cache-Control")
+	}
+}
+
+// TestAPIUploadAndTransformNewFormats exercises the full stack for the newly
+// accepted input formats (heic/avif/tiff): upload is accepted with the real
+// detected type, the original serves back unchanged, a transform without an
+// explicit fmt is rejected (the server never re-encodes to these formats), and
+// a transform with fmt=jpeg decodes via libvips and returns a web-safe jpeg.
+func TestAPIUploadAndTransformNewFormats(t *testing.T) {
+	h := newAPIHarness(t, nil)
+	cases := []struct {
+		file  string
+		mime  string
+		w, ht int
+	}{
+		{"sample.heic", "image/heic", 128, 64},
+		{"sample.avif", "image/avif", 32, 24},
+		{"sample.tiff", "image/tiff", 32, 24},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			data := readImageprocFixture(t, tc.file)
+			body, ct := multipartBody(t, "file", tc.file, data)
+			status, _, respBody := h.doValidated(t, h.newReq(t, http.MethodPost, "/v1/images", ct, body, true))
+			if status != http.StatusCreated {
+				t.Fatalf("upload status = %d, want %d (body: %s)", status, http.StatusCreated, respBody)
+			}
+			img := decodeImage(t, respBody)
+			if img.MimeType != tc.mime || int(img.Width) != tc.w || int(img.Height) != tc.ht {
+				t.Errorf("image = %s %dx%d, want %s %dx%d", img.MimeType, img.Width, img.Height, tc.mime, tc.w, tc.ht)
+			}
+			id := img.Id.String()
+
+			// Identity serve returns the stored original with its own type.
+			status, header, orig := h.doValidated(t, h.newReq(t, http.MethodGet, "/v1/images/"+id, "", nil, true))
+			if status != http.StatusOK {
+				t.Fatalf("get original status = %d, want %d", status, http.StatusOK)
+			}
+			if ctype := header.Get("Content-Type"); ctype != tc.mime {
+				t.Errorf("original Content-Type = %q, want %q", ctype, tc.mime)
+			}
+			if !bytes.Equal(orig, data) {
+				t.Error("served original does not match uploaded bytes")
+			}
+
+			// A transform without an explicit web fmt is a 400.
+			status, _, _ = h.doValidated(t, h.newReq(t, http.MethodGet, "/v1/images/"+id+"?w=16", "", nil, true))
+			if status != http.StatusBadRequest {
+				t.Errorf("transform without fmt status = %d, want %d", status, http.StatusBadRequest)
+			}
+
+			// With fmt=jpeg it decodes via libvips and returns a jpeg derivative.
+			status, header, deriv := h.doValidated(t, h.newReq(t, http.MethodGet, "/v1/images/"+id+"?w=16&fmt=jpeg", "", nil, true))
+			if status != http.StatusOK {
+				t.Fatalf("transform status = %d, want %d", status, http.StatusOK)
+			}
+			if ctype := header.Get("Content-Type"); ctype != "image/jpeg" {
+				t.Errorf("derivative Content-Type = %q, want image/jpeg", ctype)
+			}
+			if len(deriv) == 0 {
+				t.Error("derivative body is empty")
+			}
+		})
 	}
 }
 

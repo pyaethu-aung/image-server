@@ -58,6 +58,16 @@ func (s *Server) GetImage(w http.ResponseWriter, r *http.Request, id gen.ImageID
 			"lossless metadata strip is unsupported for "+img.MimeType+"; add fmt to strip via re-encode")
 		return
 	}
+	// The server encodes only to jpeg/png/webp. A source in another format
+	// (heic/heif/avif/tiff) cannot be transformed while keeping its own type,
+	// so require an explicit web-safe fmt rather than attempting (and, for
+	// HEIC, needing a patent-encumbered HEVC encoder for) the source format.
+	srcFormat := strings.TrimPrefix(img.MimeType, "image/")
+	if t.Format == "" && !imageproc.IsOutputFormat(srcFormat) {
+		writeError(w, http.StatusBadRequest, "bad_request",
+			"transforming a "+srcFormat+" image requires an explicit fmt (jpeg, png, webp)")
+		return
+	}
 	s.serveTransformed(w, r, img, t)
 }
 
