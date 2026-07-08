@@ -25,6 +25,21 @@ func (f Format) ContentType() string {
 	return "image/" + string(f)
 }
 
+// IsOutputFormat reports whether format (a bare type like "jpeg", as stored in
+// a MIME type's subtype) is one the server can encode to. Sources in other
+// formats (heic, heif, avif, tiff) are accepted for upload and served back
+// unchanged, but must carry an explicit fmt to be transformed, since the
+// server never re-encodes to those formats (HEIC in particular would need a
+// patent-encumbered HEVC encoder).
+func IsOutputFormat(format string) bool {
+	switch Format(format) {
+	case FormatJPEG, FormatPNG, FormatWebP:
+		return true
+	default:
+		return false
+	}
+}
+
 // Fit is a requested resize mode.
 type Fit string
 
