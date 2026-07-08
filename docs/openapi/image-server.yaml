@@ -22,7 +22,9 @@ paths:
       operationId: uploadImage
       summary: Upload an image (multipart)
       description: |
-        Uploads an image file. The real type is detected from magic bytes.
+        Uploads an image file. The real type is detected from magic bytes;
+        JPEG, PNG, GIF, WebP, TIFF, and the HEIF family (HEIC, HEIF, AVIF, as
+        produced by iPhones and modern Android cameras) are accepted.
         Byte-identical uploads are deduplicated by sha256 and return the
         existing record.
       requestBody:
@@ -117,7 +119,11 @@ paths:
             minimum: 1
         - name: fmt
           in: query
-          description: Output format
+          description: |
+            Output format. The server only encodes to jpeg, png, or webp.
+            Sources in a non-web format (HEIC, HEIF, AVIF, TIFF) are served
+            back unchanged when no transform is requested, but transforming
+            one requires an explicit fmt (a request without it returns 400).
           schema:
             type: string
             enum: [jpeg, png, webp]
@@ -163,6 +169,26 @@ paths:
                 type: string
                 format: binary
             image/webp:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+            image/tiff:
+              schema:
+                type: string
+                format: binary
+            image/heic:
+              schema:
+                type: string
+                format: binary
+            image/heif:
+              schema:
+                type: string
+                format: binary
+            image/avif:
               schema:
                 type: string
                 format: binary

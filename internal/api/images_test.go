@@ -268,6 +268,30 @@ func TestGetImageErrors(t *testing.T) {
 	}
 }
 
+// TestGetImageTransformNonWebSourceRequiresFmt covers the guard that a source
+// in a non-web format (heic/heif/avif/tiff) cannot be transformed without an
+// explicit fmt, since the server never re-encodes to those formats. The guard
+// fires on the stored MIME type before storage or libvips is touched.
+func TestGetImageTransformNonWebSourceRequiresFmt(t *testing.T) {
+	for _, mime := range []string{"image/heic", "image/heif", "image/avif", "image/tiff"} {
+		t.Run(mime, func(t *testing.T) {
+			id := uuid.New()
+			row := imageRow(id, "originals/aa/bb/deadbeef", 128, 64, 100)
+			row.MimeType = mime
+			images := &fakeImageStore{getByID: func(uuid.UUID) (db.Image, error) { return row, nil }}
+
+			h := newUploadHarness(t, imageConfig(), images, nil, nil)
+			status, _, body := h.get(t, "/v1/images/"+id.String()+"?w=16", true)
+			if status != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d (body: %s)", status, http.StatusBadRequest, body)
+			}
+			if e := decodeErrorResp(t, body); e.Code != "bad_request" {
+				t.Errorf("error code = %q, want bad_request", e.Code)
+			}
+		})
+	}
+}
+
 func TestGetImageInvalidUUID(t *testing.T) {
 	h := newUploadHarness(t, imageConfig(), &fakeImageStore{}, nil, nil)
 	status, _, body := h.get(t, "/v1/images/not-a-uuid", true)

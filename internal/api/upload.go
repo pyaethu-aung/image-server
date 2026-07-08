@@ -118,7 +118,7 @@ func (s *Server) UploadImageFromURL(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ingest(ctx context.Context, data []byte, filename string) (db.Image, *httpError) {
 	info, err := imageproc.DetectImage(data)
 	if err != nil {
-		return db.Image{}, &httpError{http.StatusUnsupportedMediaType, "unsupported_media_type", "not a supported image type (jpeg, png, gif, webp)"}
+		return db.Image{}, &httpError{http.StatusUnsupportedMediaType, "unsupported_media_type", "not a supported image type (jpeg, png, gif, webp, tiff, heic, heif, avif)"}
 	}
 	if err := imageproc.CheckPixelLimit(info.Width, info.Height, s.cfg.MaxPixels); err != nil {
 		return db.Image{}, &httpError{http.StatusBadRequest, "bad_request", "image dimensions exceed the configured pixel limit"}
