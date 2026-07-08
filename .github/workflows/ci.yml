@@ -33,8 +33,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      # libheif-plugin-libde265 decodes HEVC, the codec HEIC uses; Ubuntu splits
+      # it out of libvips-dev's dependencies (unlike Alpine's vips-heif, see
+      # Dockerfile), so it needs installing explicitly for the HEIC test fixture.
       - name: Install libvips
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev libheif-plugin-libde265
       - name: Coverage gate (same script as the pre-push hook)
         run: ./scripts/coverage-gate.sh
 
@@ -86,8 +89,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      # See the coverage-gate step above for why libheif-plugin-libde265 is needed.
       - name: Install libvips
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev libheif-plugin-libde265
       - name: Apply migrations
         run: make migrate
       - name: Run spec tests against service containers
