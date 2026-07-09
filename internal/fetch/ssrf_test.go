@@ -38,11 +38,35 @@ func TestIsPublicIP(t *testing.T) {
 		{"::ffff:10.0.0.1", false},
 		{"::ffff:127.0.0.1", false},
 		{"::ffff:8.8.8.8", true},
+		// NAT64 64:ff9b::/96 must be judged by the embedded IPv4
+		{"64:ff9b::a9fe:a9fe", false}, // 169.254.169.254 metadata via DNS64/NAT64
+		{"64:ff9b::a00:1", false},     // 10.0.0.1
+		{"64:ff9b::808:808", true},    // 8.8.8.8, legitimately public via NAT64
+		// 6to4 2002::/16 must be judged by the embedded IPv4
+		{"2002:c0a8:1::1", false}, // 192.168.0.1
+		{"2002:808:808::1", true}, // 8.8.8.8
+		// IPv4-compatible ::a.b.c.d (deprecated) must be judged by the embedded IPv4
+		{"::a9fe:a9fe", false}, // 169.254.169.254
+		{"::a00:1", false},     // 10.0.0.1
+		// IPv4 ranges the stdlib predicates miss
+		{"100.64.0.1", false},      // CGNAT / shared address space (RFC 6598)
+		{"100.127.255.255", false}, // CGNAT upper bound
+		{"192.0.0.1", false},       // IETF protocol assignments (RFC 6890)
+		{"198.18.0.1", false},      // benchmarking (RFC 2544)
+		{"198.19.255.255", false},  // benchmarking upper bound
+		{"240.0.0.1", false},       // reserved / class E (RFC 1112)
+		{"255.255.255.255", false}, // limited broadcast
 		// Public addresses
 		{"8.8.8.8", true},
 		{"93.184.216.34", true},
 		{"2606:4700::6810:84e5", true},
 		{"2001:4860:4860::8888", true},
+		// Boundaries adjacent to the blocked ranges must stay public
+		{"100.63.255.255", true}, // just below CGNAT
+		{"100.128.0.0", true},    // just above CGNAT
+		{"192.0.1.1", true},      // just above 192.0.0.0/24
+		{"192.0.2.1", true},      // TEST-NET-1, deliberately not blocked here
+		{"198.20.0.0", true},     // just above benchmarking
 	}
 
 	for _, tt := range tests {
@@ -117,6 +141,18 @@ func TestSafeDialerDialContext(t *testing.T) {
 			name:     "metadata IP is blocked",
 			address:  "metadata.test:80",
 			resolver: &fakeResolver{answers: map[string][]netip.Addr{"metadata.test": addrs("169.254.169.254")}},
+			wantErr:  ErrBlockedAddress,
+		},
+		{
+			name:     "nat64-embedded metadata IP is blocked",
+			address:  "nat64.test:80",
+			resolver: &fakeResolver{answers: map[string][]netip.Addr{"nat64.test": addrs("64:ff9b::a9fe:a9fe")}},
+			wantErr:  ErrBlockedAddress,
+		},
+		{
+			name:     "cgnat answer is blocked",
+			address:  "cgnat.test:80",
+			resolver: &fakeResolver{answers: map[string][]netip.Addr{"cgnat.test": addrs("100.64.0.1")}},
 			wantErr:  ErrBlockedAddress,
 		},
 		{
