@@ -13,7 +13,7 @@ RUN CGO_ENABLED=1 go build -o /out/server ./cmd/server
 # HEIF, and AVIF originals. TIFF decode is already covered by the base vips
 # package's libtiff dependency. The server never encodes to these formats, so
 # only the loaders are needed.
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache vips vips-heif ca-certificates \
     && adduser -S -u 10001 -H app \
     && mkdir -p /data/images \
