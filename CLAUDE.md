@@ -118,6 +118,8 @@ Local backend requirements:
 
 Dedup on `content_hash` with a unique constraint: an identical upload returns the existing record instead of storing a duplicate. `storage_key` is backend-agnostic (a key into the `Storage` interface, not a file path).
 
+`pgxpool.New` in `main.go` is given no pool-size config, so it uses pgx's own default (`max(4, NumCPU())` connections). If that default needs to change for a deployment, set `pool_max_conns`/`pool_min_conns` as query params on `DATABASE_URL` — no code change required.
+
 ### Derivative caching
 
 - Cache key = hash of `image_id` + normalized transform params. Normalize before hashing (sorted params, defaults filled in) so `?w=100&h=200` and `?h=200&w=100` hit the same key.
