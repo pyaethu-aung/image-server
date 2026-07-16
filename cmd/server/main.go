@@ -45,6 +45,9 @@ func main() {
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
+	// Pool size is not configured here; pgxpool defaults to max(4, NumCPU())
+	// conns. Override via pool_max_conns/pool_min_conns query params on
+	// DATABASE_URL if that default is ever wrong for a deployment.
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("postgres connect", "err", err)
