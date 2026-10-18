@@ -1,6 +1,6 @@
 module github.com/pyaethu-aung/image-server
 
-go 1.26.5
+go 1.26.9
 
 require (
 	github.com/alicebob/miniredis/v2 v2.38.0
