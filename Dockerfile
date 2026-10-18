@@ -1,5 +1,5 @@
 # Build stage: cgo + libvips headers for bimg
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 RUN apk add --no-cache build-base vips-dev pkgconfig
 WORKDIR /src
 COPY go.mod go.sum ./
